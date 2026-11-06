@@ -8,24 +8,35 @@ Site para registrar e acompanhar ocorrências escolares, hospedado de graça no 
 |---|---|---|
 | Site (HTML, CSS, JavaScript) | GitHub Pages | Telas que a equipe usa |
 | Banco PostgreSQL | Supabase | Ocorrências, conversas, avisos, auditoria |
-| Login e verificação em duas etapas | Supabase Auth | E-mail, senha e código do aplicativo autenticador |
+| Entrada por código | Supabase Auth + seu provedor de e-mail | A pessoa digita o e-mail e entra com um código de 6 dígitos que chega nele. Sem senha. |
 | Avisos e chat em tempo real | Supabase Realtime | Ocorrências e mensagens aparecem na hora |
 | PDFs | Navegador (jsPDF) | Ficha para prontuário e relatório geral |
 
 A segurança fica **dentro do banco** (regras de acesso por linha, no `supabase/schema.sql`). Mesmo que alguém altere o site, o banco só entrega a cada pessoa o que o perfil dela permite.
 
-### Quem pode o quê
+### Quem pode o quê: funções de acesso
 
-| | AOE / Professor | Coordenação | Direção |
+Cada pessoa tem uma **função**, e a função define o que ela vê e faz. O sistema já vem com quatro:
+
+| | Professor(a) / AOE | Coordenação | Direção |
 |---|---|---|---|
 | Registrar ocorrência | Sim | Sim | Sim |
 | Ver ocorrências | Só as próprias | Todas | Todas |
-| Conversar na ocorrência | Nas próprias | Todas | Todas |
+| Conversar nas ocorrências | Sim | Sim | Sim |
 | Atualizar situação e providências | Não | Sim | Sim |
-| PDF, relatórios e painel | Não | Sim | Sim |
-| Usuários, configurações e auditoria | Não | Não | Sim |
+| Painel, PDFs e relatórios | Não | Sim | Sim |
+| Configurações e auditoria | Não | Não | Sim |
+| Cadastrar pessoas e criar funções | Não | Não | Sim (exclusivo) |
 
-## Colocar no ar (cerca de 20 minutos)
+Em **Funções de acesso**, a Direção cria novas funções (por exemplo, "Administrador", "Psicólogo(a)" ou "Secretaria") e marca o que cada uma pode: registrar, ver as ocorrências de todos, conversar, acompanhar, painel, relatórios, configurações e auditoria. Também escolhe quais categorias de ocorrência a função enxerga (Administrativa, Pedagógica e Conviva). As funções prontas, exceto a Direção, também podem ser editadas. A função Direção é fixa, para a escola nunca ficar sem quem administre.
+
+As regras valem no banco de dados, não só na tela: mesmo que alguém mexa no site, o banco só entrega o que a função permite.
+
+### Conversa fechada nas ocorrências encerradas
+
+Quando a ocorrência é encerrada, a conversa da equipe fica só para consulta e ninguém consegue enviar mensagens, nem pelo site nem direto no banco. Quem tem a permissão de acompanhar pode reabrir a ocorrência mudando a situação, e a conversa volta a funcionar.
+
+## Colocar no ar (cerca de 30 minutos)
 
 ### 1. Criar o banco no Supabase
 
@@ -34,18 +45,42 @@ A segurança fica **dentro do banco** (regras de acesso por linha, no `supabase/
 3. Com o projeto pronto, abra **SQL Editor > New query**, cole todo o conteúdo de `supabase/schema.sql` e clique em **Run**. Deve aparecer "Success".
 4. Em **Authentication > Sign In / Providers > Email**, **desligue "Confirm email"** e salve. Isso é necessário porque a Direção cadastra a equipe pelo próprio sistema, e o envio de e-mails do plano gratuito é restrito. Deixe "Allow new users to sign up" ligado.
 
-### 2. Criar o primeiro acesso da Direção
+### 2. Configurar o envio dos códigos por e-mail (obrigatório)
 
-1. Em **Authentication > Users > Add user > Create new user**, informe o seu e-mail e uma senha, marque **Auto Confirm User** e crie.
+O serviço de e-mail que vem com o Supabase só envia para os membros da sua equipe no Supabase e no máximo 2 e-mails por hora. Para a escola, é preciso ligar um provedor de e-mail próprio (SMTP). Há opções gratuitas:
+
+- **Brevo** (brevo.com): crie a conta, valide o e-mail remetente e pegue os dados em *SMTP & API*. O plano gratuito permite algumas centenas de e-mails por dia (confira o limite atual no site), o que sobra para uma escola.
+- **Gmail**: com verificação em duas etapas ativa na conta Google, crie uma *senha de app* em myaccount.google.com/apppasswords. Servidor `smtp.gmail.com`, porta `465`, usuário = o endereço do Gmail, senha = a senha de app.
+
+Depois, no Supabase:
+
+1. **Authentication > Emails > SMTP Settings**: ligue **Enable custom SMTP** e preencha remetente (por exemplo `SisRoe <seu.email@...>`), servidor, porta, usuário e senha do provedor. Salve.
+2. **Authentication > Emails > Templates > Magic Link**: troque o assunto e o texto pelo modelo abaixo. O `{{ .Token }}` é o que faz chegar um código em vez de um link.
+
+   Assunto: `Seu código de acesso ao SisRoe`
+
+   ```html
+   <h2>Código de acesso ao SisRoe</h2>
+   <p>Digite este código para entrar:</p>
+   <p style="font-size:28px;font-weight:bold;letter-spacing:4px">{{ .Token }}</p>
+   <p>Ele vale por 10 minutos. Se não foi você que pediu, ignore este e-mail.</p>
+   ```
+
+3. **Authentication > Sign In / Providers > Email**: em **Email OTP Expiration**, coloque `600` (10 minutos) e mantenha o tamanho do código em `6`. Salve.
+4. **Authentication > Rate Limits**: em **Rate limit for sending emails**, suba para algo como `100` por hora, para não travar na entrada da equipe no começo do turno.
+
+### 3. Criar o primeiro acesso da Direção
+
+1. Em **Authentication > Users > Add user > Create new user**, informe o seu e-mail e uma senha qualquer (ela não será usada), marque **Auto Confirm User** e crie.
 2. No **SQL Editor**, rode (trocando o e-mail e o nome):
 
 ```sql
 update public.perfis
-set perfil = 'DIRECAO', nome = 'Seu Nome'
+set funcao_id = (select id from public.funcoes where direcao), nome = 'Seu Nome'
 where email = 'seu.email@exemplo.com';
 ```
 
-### 3. Publicar o site no GitHub
+### 4. Publicar o site no GitHub
 
 1. Crie uma conta em https://github.com e um repositório novo, por exemplo `sisroe`. No plano gratuito, o GitHub Pages exige repositório **público**. Isso não expõe dados: o código não contém nenhuma informação de estudantes nem senhas.
 2. No repositório, clique em **Add file > Upload files** e envie todos os arquivos desta pasta (incluindo a pasta `supabase` e o arquivo `.nojekyll`).
@@ -55,11 +90,15 @@ where email = 'seu.email@exemplo.com';
 6. Em um ou dois minutos o site estará em `https://SEU-USUARIO.github.io/sisroe/`.
 7. Volte ao Supabase em **Authentication > URL Configuration** e coloque esse endereço em **Site URL**.
 
-### 4. Primeiro uso
+### 5. Primeiro uso
 
-1. Entre no site com o e-mail e a senha da Direção e ative a verificação em duas etapas com um aplicativo autenticador gratuito (Google Authenticator, Microsoft Authenticator ou Aegis).
+1. Entre no site com o seu e-mail e o código que chegar nele.
 2. Em **Configurações**, informe o nome e o endereço da escola (aparecem nos PDFs) e revise os tipos de ocorrência.
-3. Em **Usuários**, cadastre a equipe. Cada pessoa recebe uma senha provisória, que aparece uma única vez e deve ser entregue pessoalmente. No primeiro acesso, a pessoa troca a senha e ativa o duplo fator.
+3. Se precisar, crie funções em **Funções de acesso**. Depois, em **Usuários**, cadastre a equipe com nome, e-mail e função. A pessoa já pode entrar: basta digitar o e-mail no site e usar o código recebido. Depois de cadastrar todos, desligue **Allow new users to sign up** em Authentication > Sign In / Providers > Email; ligue de novo só quando precisar cadastrar alguém.
+
+## Já tinha o SisRoe instalado?
+
+Rode **uma vez** o arquivo `supabase/migracao-funcoes.sql` no SQL Editor. Ele serve para qualquer versão anterior (com autenticador ou já com código no e-mail): transforma os perfis antigos em funções, fecha o chat das ocorrências encerradas e mantém ocorrências, conversas, usuários e auditoria. No fim, ele mostra a lista de pessoas com a função de cada uma, para você conferir. Depois, atualize os arquivos do site no GitHub (sem trocar o seu `config.js`). Se vier da versão com autenticador, faça também a configuração de e-mail do passo 2.
 
 ## Atualizar o site
 
@@ -83,7 +122,8 @@ git add . && git commit -m "Ajuste" && git push
 O sistema guarda dados pessoais de crianças e adolescentes, que a LGPD (art. 14) trata com proteção reforçada.
 
 - Valide o uso com a Direção e com a Diretoria de Ensino antes de colocar em produção, e informe as famílias conforme a orientação da rede.
-- Mantenha a verificação em duas etapas obrigatória (padrão).
+- O e-mail é a chave de entrada: quem acessar a caixa de e-mail de alguém consegue entrar como essa pessoa. Oriente a equipe a proteger o e-mail (de preferência com verificação em duas etapas no próprio provedor de e-mail) e a não deixar o e-mail aberto em computadores compartilhados.
+- Em computadores compartilhados, use sempre **Sair**. Em "Minha conta", cada pessoa pode encerrar o acesso em todos os aparelhos.
 - Desative imediatamente o acesso de quem deixar a escola (Usuários > Desativar). O bloqueio vale na hora, mesmo para quem estiver conectado.
 - Registre fatos, não opiniões. Os PDFs saem com aviso de uso restrito.
 - Consulte a Auditoria periodicamente. Criações, atualizações, mensagens e mudanças de usuários são registradas pelo próprio banco; consultas e PDFs são registrados pelo site.
@@ -97,13 +137,17 @@ pdf.js                geração dos PDFs
 style.css             visual
 config.js             endereço e chave pública do Supabase (preencher)
 supabase/schema.sql   banco: tabelas, regras de acesso, funções e tempo real
+supabase/migracao-funcoes.sql   só para quem já tinha o SisRoe instalado
 ```
 
 ## Problemas comuns
 
 - **"Falta configurar":** o `config.js` ainda está com os valores de exemplo.
-- **"E-mail ou senha incorretos" para alguém recém-cadastrado:** confira se "Confirm email" está desligado no Supabase.
-- **"Acesso aguardando liberação":** a Direção precisa escolher o perfil da pessoa em Usuários.
-- **Perdeu o celular com o autenticador:** a Direção usa "Refazer duplo fator" em Usuários.
-- **Esqueceu a senha:** a Direção usa "Nova senha" em Usuários.
+- **O código não chega:** olhe a caixa de spam e confira se o e-mail foi digitado igual ao cadastrado. Se não chega para ninguém, revise o SMTP (passo 2); os erros de envio aparecem em Supabase > Logs > Auth.
+- **"O envio de e-mails ainda não foi configurado":** falta ligar o SMTP próprio (passo 2).
+- **"Limite de envio de e-mails atingido":** aumente o limite em Authentication > Rate Limits.
+- **"Código inválido ou vencido":** o código vale 10 minutos e só pode ser usado uma vez. Peça outro.
+- **"Acesso aguardando liberação":** a Direção precisa escolher a função da pessoa em Usuários.
+- **Mudei uma função e nada mudou para a pessoa:** as permissões são lidas ao abrir o site. Peça para a pessoa atualizar a página (F5).
+- **Não consigo excluir uma função:** ainda há pessoas com ela. Mude a função dessas pessoas em Usuários antes.
 - **Site não abre depois de muito tempo sem uso:** o projeto do Supabase foi pausado; reative no painel.

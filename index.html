@@ -4,14 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex, nofollow">
-  <title>EducaApoio</title>
+  <title>SisRoe</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <!-- ============ Entrada ============ -->
   <main class="tela-login" id="tela-login">
     <div class="cartao-login">
-      <p class="marca">EducaApoio</p>
+      <p class="marca">SisRoe</p>
       <p class="marca-sub" id="escola-login">Registro de ocorrências escolares</p>
 
       <p id="carregando" class="muted">Carregando…</p>
@@ -23,39 +23,21 @@
 
       <form id="f-login" class="oculto">
         <label for="email">E-mail</label>
-        <input id="email" type="email" autocomplete="username" required>
-        <label for="senha">Senha</label>
-        <input id="senha" type="password" autocomplete="current-password" required>
-        <button class="btn" type="submit">Entrar</button>
+        <input id="email" type="email" autocomplete="email" required>
+        <p class="muted">Você vai receber um código no e-mail para entrar. Não há senha.</p>
+        <button class="btn" type="submit">Enviar código</button>
       </form>
 
-      <form id="f-totp" class="oculto">
-        <h3>Verificação em duas etapas</h3>
-        <p class="muted">Abra o aplicativo autenticador no celular e digite o código de 6 dígitos.</p>
+      <form id="f-codigo" class="oculto">
+        <h3>Confira seu e-mail</h3>
+        <p class="muted">Se <strong id="email-enviado"></strong> estiver cadastrado, um código chegou nele agora. Não achou? Olhe a caixa de spam.</p>
         <label for="codigo">Código</label>
-        <input id="codigo" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required>
-        <button class="btn" type="submit">Confirmar</button>
-      </form>
-
-      <form id="f-senha" class="oculto">
-        <h3>Crie sua senha</h3>
-        <p class="muted">A senha provisória precisa ser trocada. Use pelo menos 8 caracteres, com letras e números.</p>
-        <label for="nova">Nova senha</label>
-        <input id="nova" type="password" autocomplete="new-password" minlength="8" required>
-        <label for="nova2">Repita a nova senha</label>
-        <input id="nova2" type="password" autocomplete="new-password" minlength="8" required>
-        <button class="btn" type="submit">Salvar senha</button>
-      </form>
-
-      <form id="f-2fa" class="oculto">
-        <h3>Ative a verificação em duas etapas</h3>
-        <p class="muted">Instale um aplicativo autenticador gratuito (Google Authenticator, Microsoft Authenticator ou Aegis), escaneie o código e digite o número que aparecer.</p>
-        <img id="qr" class="qr" alt="QR Code para o aplicativo autenticador" width="220" height="220">
-        <p class="muted">Sem câmera? Digite esta chave no aplicativo:</p>
-        <p id="segredo" class="segredo"></p>
-        <label for="codigo2">Código do aplicativo</label>
-        <input id="codigo2" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required>
-        <button class="btn" type="submit">Ativar e entrar</button>
+        <input id="codigo" inputmode="numeric" autocomplete="one-time-code" maxlength="10" required>
+        <button class="btn" type="submit">Entrar</button>
+        <div class="acoes-login">
+          <button type="button" class="link" id="reenviar">Enviar outro código</button>
+          <button type="button" class="link" id="trocar-email">Usar outro e-mail</button>
+        </div>
       </form>
 
       <div id="aguardando" class="oculto">
@@ -71,7 +53,7 @@
   <!-- ============ Aplicação ============ -->
   <div class="app oculto" id="tela-app">
     <aside class="lateral" id="lateral">
-      <p class="marca">EducaApoio</p>
+      <p class="marca">SisRoe</p>
       <p class="escola" id="escola-app"></p>
       <nav id="menu" aria-label="Menu principal"></nav>
       <div class="rodape-lateral">

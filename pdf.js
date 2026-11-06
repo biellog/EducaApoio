@@ -2,7 +2,6 @@
 window.SisRoePDF = (function () {
   const STATUS = { ABERTA: 'Aberta', EM_ACOMPANHAMENTO: 'Em acompanhamento', ENCERRADA: 'Encerrada' };
   const CATEGORIA = { ADMINISTRATIVA: 'Administrativa', PEDAGOGICA: 'Pedagógica', CONVIVA: 'Protocolo Conviva (média gravidade)' };
-  const PERFIL = { AOE: 'Agente de Organização Escolar', PROFESSOR: 'Professor(a)', COORDENACAO: 'Coordenação', DIRECAO: 'Direção' };
 
   const L = 595.28, A = 841.89, M = 50, LARG = L - 2 * M, BASE = A - 60;
   const dataBR = (d) => (d ? d.split('-').reverse().join('/') : '');
@@ -63,7 +62,7 @@ window.SisRoePDF = (function () {
     p.texto(`Categoria: ${CATEGORIA[oc.categoria]}`);
     p.texto(`Tipo de ocorrência: ${oc.tipo_nome}`);
     p.texto(`Situação: ${STATUS[oc.status]}`);
-    p.texto(`Registrado por: ${oc.autor_nome} (${PERFIL[oc.autor_perfil] || ''}) em ${dataHora(oc.criado_em)}`);
+    p.texto(`Registrado por: ${oc.autor_nome}${oc.autor_funcao ? ` (${oc.autor_funcao})` : ''} em ${dataHora(oc.criado_em)}`);
     p.espaco(8);
     p.texto('Descrição do fato', { negrito: true });
     p.texto(oc.descricao);

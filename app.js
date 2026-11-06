@@ -8,7 +8,16 @@
 
   const STATUS = { ABERTA: 'Aberta', EM_ACOMPANHAMENTO: 'Em acompanhamento', ENCERRADA: 'Encerrada' };
   const CATEGORIA = { ADMINISTRATIVA: 'Administrativa', PEDAGOGICA: 'Pedagógica', CONVIVA: 'Conviva (média gravidade)' };
-  const PERFIL = { AOE: 'Agente de Organização Escolar', PROFESSOR: 'Professor(a)', COORDENACAO: 'Coordenação', DIRECAO: 'Direção' };
+  const PERMISSOES = [
+    ['registrar', 'Registrar ocorrências', ''],
+    ['ver_todas', 'Ver as ocorrências de todos', 'Sem isto, vê só as que registrou.'],
+    ['conversar', 'Participar da conversa das ocorrências', 'Ler e escrever no chat de cada ocorrência.'],
+    ['acompanhar', 'Atualizar situação e providências', 'Inclui encerrar e reabrir ocorrências.'],
+    ['painel', 'Ver o painel de indicadores', 'Os números consideram só o que a função pode ver.'],
+    ['relatorios', 'Gerar PDFs e relatórios', ''],
+    ['configuracoes', 'Editar dados da escola e tipos de ocorrência', ''],
+    ['auditoria', 'Consultar a auditoria', 'Mostra acessos e ações de todas as pessoas.'],
+  ];
   const POR_PAGINA = 30;
 
   function esc(v) {
@@ -35,15 +44,14 @@
   function erroPT(e) {
     const m = (e && (e.message || e.error_description)) || String(e);
     const mapa = [
-      [/Invalid login credentials/i, 'E-mail ou senha incorretos.'],
+      [/expired|invalid.*token|token.*invalid|otp_expired/i, 'Código inválido ou vencido. Peça um novo código.'],
+      [/only request this after|security purposes/i, 'Aguarde alguns segundos antes de pedir outro código.'],
+      [/email rate limit|over_email_send_rate_limit/i, 'Limite de envio de e-mails atingido. Tente em alguns minutos ou avise a Direção.'],
+      [/not authorized|email_address_not_authorized/i, 'O envio de e-mails ainda não foi configurado no Supabase (SMTP). Avise a Direção.'],
       [/already registered|already been registered/i, 'Esse e-mail já está cadastrado.'],
-      [/Invalid TOTP code|invalid.*code/i, 'Código inválido. Confira o horário do celular e tente de novo.'],
-      [/row-level security/i, 'Seu perfil não tem acesso a esta função.'],
-      [/Password should be|weak password/i, 'Senha fraca. Use pelo menos 8 caracteres, com letras e números.'],
+      [/row-level security/i, 'Sua função não tem acesso a esta ação.'],
       [/rate limit|too many/i, 'Muitas tentativas. Aguarde alguns minutos.'],
       [/Failed to fetch|NetworkError/i, 'Sem conexão com o servidor. Verifique a internet.'],
-      [/AAL2 required|aal2/i, 'Confirme a verificação em duas etapas primeiro.'],
-      [/same_password|different from the old/i, 'A nova senha deve ser diferente da atual.'],
     ];
     for (const [re, txt] of mapa) if (re.test(m)) return txt;
     return m;
@@ -63,15 +71,10 @@
     toastTimer = setTimeout(() => t.classList.add('oculto'), 6000);
   }
 
-  function senhaProvisoria() {
-    const a = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    const v = crypto.getRandomValues(new Uint32Array(10));
-    return Array.from(v, (n) => a[n % a.length]).join('') + '7';
-  }
-  function validarSenha(s) {
-    if (s.length < 8) return 'A senha precisa ter pelo menos 8 caracteres.';
-    if (!/[A-Za-z]/.test(s) || !/[0-9]/.test(s)) return 'Use letras e números na senha.';
-    return null;
+  // Senha longa e aleatória, descartada: ninguém entra por senha, só por código no e-mail
+  function senhaDescartavel() {
+    const v = crypto.getRandomValues(new Uint8Array(32));
+    return Array.from(v, (n) => n.toString(16).padStart(2, '0')).join('') + 'Aa1';
   }
 
   /* ================= Supabase ================= */
@@ -79,15 +82,19 @@
   const configurado = CFG.supabaseUrl && !/SEU-PROJETO/.test(CFG.supabaseUrl) && CFG.supabaseAnonKey && !/COLE-AQUI/.test(CFG.supabaseAnonKey);
   const sb = configurado ? window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseAnonKey) : null;
 
-  let escola = { escola_nome: 'Unidade Escolar', escola_endereco: '', exigir_2fa: true, limite_atencao: 3 };
+  let escola = { escola_nome: 'Unidade Escolar', escola_endereco: '', limite_atencao: 3 };
   let eu = null;
   let tipos = [];
   let ocAtual = null;
   let canalOc = null;
   let veioDoLogin = false;
 
-  const ehGestor = () => eu && ['COORDENACAO', 'DIRECAO'].includes(eu.perfil);
-  const ehDirecao = () => eu && eu.perfil === 'DIRECAO';
+  // Permissões da função de quem está logado (a Direção pode tudo). O banco confere de novo.
+  const ehDirecao = () => !!(eu && eu.funcao && eu.funcao.direcao);
+  const pode = (perm) => ehDirecao() || !!(eu && eu.funcao && eu.funcao[perm]);
+  const categoriasVisiveis = () =>
+    Object.keys(CATEGORIA).filter((c) => ehDirecao() || (eu.funcao.categorias || []).includes(c));
+  const CATEGORIA_VISIVEL = () => Object.fromEntries(categoriasVisiveis().map((c) => [c, CATEGORIA[c]]));
   const auditar = (acao, entidade, id) =>
     sb.rpc('auditar', { p_acao: acao, p_entidade: entidade || null, p_id: id != null ? String(id) : null }).then(() => {});
 
@@ -99,8 +106,8 @@
     document.title = 'SisRoe | ' + escola.escola_nome;
   }
 
-  /* ================= Entrada (login em etapas) ================= */
-  const ETAPAS = ['carregando', 'sem-config', 'f-login', 'f-totp', 'f-senha', 'f-2fa', 'aguardando'];
+  /* ================= Entrada por código no e-mail ================= */
+  const ETAPAS = ['carregando', 'sem-config', 'f-login', 'f-codigo', 'aguardando'];
   function mostrarEtapa(id) {
     $('#tela-app').classList.add('oculto');
     $('#tela-login').classList.remove('oculto');
@@ -110,40 +117,37 @@
     if (campo) campo.focus();
   }
 
-  // Decide em que etapa a pessoa está e avança
   async function fluxo() {
     const { data: { session } } = await sb.auth.getSession();
     if (!session) return mostrarEtapa('f-login');
-
-    const aal = ok(await sb.auth.mfa.getAuthenticatorAssuranceLevel());
-    if (aal.nextLevel === 'aal2' && aal.currentLevel !== 'aal2') return mostrarEtapa('f-totp');
-
-    const meu = ok(await sb.from('perfis').select('*').eq('id', session.user.id).maybeSingle());
-    if (!meu) return mostrarEtapa('aguardando');
-    if (meu.trocar_senha) return mostrarEtapa('f-senha');
-    if (escola.exigir_2fa && aal.currentLevel !== 'aal2') return iniciarCadastro2FA('#qr', '#segredo').then(() => mostrarEtapa('f-2fa'));
-    if (!meu.perfil || !meu.ativo) return mostrarEtapa('aguardando');
-
+    const meu = ok(await sb.from('perfis').select('*, funcao:funcoes(*)').eq('id', session.user.id).maybeSingle());
+    if (!meu || !meu.funcao || !meu.ativo) return mostrarEtapa('aguardando');
     eu = meu;
     if (veioDoLogin) { auditar('LOGIN', 'usuario', eu.id); veioDoLogin = false; }
     iniciarApp();
   }
 
-  let fatorPendente = null;
-  async function iniciarCadastro2FA(seletorQr, seletorSegredo) {
-    const fatores = ok(await sb.auth.mfa.listFactors());
-    for (const f of fatores.all.filter((x) => x.status !== 'verified')) {
-      await sb.auth.mfa.unenroll({ factorId: f.id });
+  let emailLogin = '';
+  async function enviarCodigo() {
+    const r = await sb.auth.signInWithOtp({ email: emailLogin, options: { shouldCreateUser: false } });
+    // E-mail não cadastrado: não revelamos isso, para ninguém descobrir quem tem acesso
+    if (r.error && !/signups? not allowed|not found|user not found/i.test(r.error.message)) {
+      throw new Error(erroPT(r.error));
     }
-    const r = ok(await sb.auth.mfa.enroll({ factorType: 'totp', friendlyName: 'SisRoe ' + Date.now() }));
-    fatorPendente = r.id;
-    $(seletorQr).src = r.totp.qr_code;
-    $(seletorSegredo).textContent = r.totp.secret;
   }
-  async function confirmar2FA(codigo) {
-    ok(await sb.auth.mfa.challengeAndVerify({ factorId: fatorPendente, code: codigo.replace(/\s/g, '') }));
-    fatorPendente = null;
-    auditar('2FA_ATIVADO', 'usuario');
+
+  let esperaTimer;
+  function bloquearReenvio(segundos) {
+    const b = $('#reenviar');
+    clearInterval(esperaTimer);
+    let s = segundos;
+    b.disabled = true;
+    b.textContent = `Enviar outro código (${s}s)`;
+    esperaTimer = setInterval(() => {
+      s -= 1;
+      if (s <= 0) { clearInterval(esperaTimer); b.disabled = false; b.textContent = 'Enviar outro código'; }
+      else b.textContent = `Enviar outro código (${s}s)`;
+    }, 1000);
   }
 
   function aoEnviar(formId, acao) {
@@ -154,7 +158,6 @@
       $('#erro').textContent = '';
       try {
         await acao();
-        await fluxo();
       } catch (err) {
         $('#erro').textContent = erroPT(err);
       } finally {
@@ -164,30 +167,25 @@
   }
 
   aoEnviar('f-login', async () => {
-    ok(await sb.auth.signInWithPassword({ email: $('#email').value.trim(), password: $('#senha').value }));
-    $('#senha').value = '';
-    veioDoLogin = true;
+    emailLogin = $('#email').value.trim().toLowerCase();
+    await enviarCodigo();
+    $('#email-enviado').textContent = emailLogin;
+    mostrarEtapa('f-codigo');
+    bloquearReenvio(60);
   });
-  aoEnviar('f-totp', async () => {
-    const fatores = ok(await sb.auth.mfa.listFactors());
-    const f = fatores.totp[0];
-    if (!f) throw new Error('Nenhum aplicativo autenticador cadastrado. Peça à Direção para refazer o duplo fator.');
-    ok(await sb.auth.mfa.challengeAndVerify({ factorId: f.id, code: $('#codigo').value.replace(/\s/g, '') }));
+  aoEnviar('f-codigo', async () => {
+    const token = $('#codigo').value.replace(/\s/g, '');
+    ok(await sb.auth.verifyOtp({ email: emailLogin, token, type: 'email' }));
     $('#codigo').value = '';
+    veioDoLogin = true;
+    await fluxo();
   });
-  aoEnviar('f-senha', async () => {
-    const nova = $('#nova').value;
-    if (nova !== $('#nova2').value) throw new Error('As senhas não são iguais.');
-    const erro = validarSenha(nova);
-    if (erro) throw new Error(erro);
-    ok(await sb.auth.updateUser({ password: nova }));
-    ok(await sb.rpc('senha_trocada'));
-    $('#nova').value = ''; $('#nova2').value = '';
+  $('#reenviar').addEventListener('click', async () => {
+    $('#erro').textContent = '';
+    try { await enviarCodigo(); bloquearReenvio(60); toast('Novo código enviado.'); }
+    catch (err) { $('#erro').textContent = erroPT(err); }
   });
-  aoEnviar('f-2fa', async () => {
-    await confirmar2FA($('#codigo2').value);
-    $('#codigo2').value = '';
-  });
+  $('#trocar-email').addEventListener('click', () => mostrarEtapa('f-login'));
 
   async function sair() {
     try { await auditar('LOGOUT', 'usuario', eu && eu.id); } catch (e) { /* segue */ }
@@ -206,24 +204,25 @@
     carregarNotificacoes();
     conectarAvisos();
     window.addEventListener('hashchange', rotear);
-    if (!location.hash) location.hash = ehGestor() ? '#/painel' : '#/ocorrencias';
+    if (!location.hash) location.hash = pode('painel') ? '#/painel' : '#/ocorrencias';
     else rotear();
   }
 
   function montarMenu() {
     const itens = [
-      ['#/ocorrencias', ehGestor() ? 'Ocorrências' : 'Minhas ocorrências', true],
-      ['#/nova', 'Registrar ocorrência', true],
-      ['#/painel', 'Painel', ehGestor()],
-      ['#/relatorios', 'Relatórios', ehGestor()],
+      ['#/ocorrencias', pode('ver_todas') ? 'Ocorrências' : 'Minhas ocorrências', true],
+      ['#/nova', 'Registrar ocorrência', pode('registrar')],
+      ['#/painel', 'Painel', pode('painel')],
+      ['#/relatorios', 'Relatórios', pode('relatorios')],
       ['#/usuarios', 'Usuários', ehDirecao()],
-      ['#/configuracoes', 'Configurações', ehDirecao()],
-      ['#/auditoria', 'Auditoria', ehDirecao()],
+      ['#/funcoes', 'Funções de acesso', ehDirecao()],
+      ['#/configuracoes', 'Configurações', pode('configuracoes')],
+      ['#/auditoria', 'Auditoria', pode('auditoria')],
       ['#/conta', 'Minha conta', true],
     ];
     $('#menu').innerHTML = itens.filter((i) => i[2]).map(([h, t]) => `<a href="${h}">${esc(t)}</a>`).join('');
     $('#nome-usuario').textContent = eu.nome;
-    $('#perfil-usuario').textContent = PERFIL[eu.perfil];
+    $('#perfil-usuario').textContent = eu.funcao.nome;
   }
   function marcarMenu() {
     const base = location.hash.split('?')[0];
@@ -293,6 +292,7 @@
         case 'painel': return await telaPainel(params);
         case 'relatorios': return await telaRelatorios();
         case 'usuarios': return await telaUsuarios();
+        case 'funcoes': return await telaFuncoes();
         case 'configuracoes': return await telaConfiguracoes();
         case 'auditoria': return await telaAuditoria(params);
         case 'conta': return await telaConta();
@@ -334,18 +334,18 @@
     if (r.error) throw r.error;
     const total = r.count || 0;
     const paginas = Math.max(1, Math.ceil(total / POR_PAGINA));
-    const titulo = p.aluno ? `Histórico de ${p.aluno}` : ehGestor() ? 'Ocorrências' : 'Minhas ocorrências';
+    const titulo = p.aluno ? `Histórico de ${p.aluno}` : pode('ver_todas') ? 'Ocorrências' : 'Minhas ocorrências';
 
     conteudo.innerHTML = `
       <div class="cabecalho-pagina">
         <div><h1>${esc(titulo)}</h1><p class="muted">${total} registro(s)</p></div>
-        <a class="btn" href="#/nova">Registrar ocorrência</a>
+        ${pode('registrar') ? '<a class="btn" href="#/nova">Registrar ocorrência</a>' : ''}
       </div>
       ${await sugestoes()}
       <form class="filtros" id="f-filtros">
         <div><label for="fq">Buscar estudante, turma ou texto</label><input id="fq" name="q" value="${esc(p.q || '')}" placeholder="Digite o nome do estudante"></div>
         <div><label for="ft">Turma</label><input id="ft" name="turma" list="dl-turmas" value="${esc(p.turma || '')}"></div>
-        <div><label for="fc">Categoria</label><select id="fc" name="categoria">${opcoes(CATEGORIA, p.categoria, 'Todas')}</select></div>
+        <div><label for="fc">Categoria</label><select id="fc" name="categoria">${opcoes(CATEGORIA_VISIVEL(), p.categoria, 'Todas')}</select></div>
         <div><label for="fs">Situação</label><select id="fs" name="status">${opcoes(STATUS, p.status, 'Todas')}</select></div>
         <div><label for="fde">De</label><input id="fde" type="date" name="de" value="${esc(p.de || '')}"></div>
         <div><label for="fate">Até</label><input id="fate" type="date" name="ate" value="${esc(p.ate || '')}"></div>
@@ -369,7 +369,7 @@
         ${pagina > 1 ? `<a class="btn sec peq" href="#/ocorrencias?${qs({ ...p, pagina: pagina - 1 })}">Anterior</a>` : ''}
         <span class="muted">Página ${pagina} de ${paginas}</span>
         ${pagina < paginas ? `<a class="btn sec peq" href="#/ocorrencias?${qs({ ...p, pagina: pagina + 1 })}">Próxima</a>` : ''}
-      </div>` : '<div class="folha"><p>Nenhuma ocorrência encontrada.</p><a class="btn" href="#/nova">Registrar ocorrência</a></div>'}`;
+      </div>` : `<div class="folha"><p>Nenhuma ocorrência encontrada.</p>${pode('registrar') ? '<a class="btn" href="#/nova">Registrar ocorrência</a>' : ''}</div>`}`;
 
     $('#f-filtros').addEventListener('submit', (e) => {
       e.preventDefault();
@@ -384,6 +384,7 @@
 
   /* ================= Nova ocorrência ================= */
   async function telaNova() {
+    if (!pode('registrar')) throw new Error('Sua função não permite registrar ocorrências.');
     tipos = ok(await sb.from('tipos_ocorrencia').select('*').eq('ativo', true).order('nome'));
     conteudo.innerHTML = `
       <div class="cabecalho-pagina"><div><h1>Registrar ocorrência</h1>
@@ -396,7 +397,7 @@
           <div><label class="obrig" for="n-aluno">Estudante</label><input id="n-aluno" name="aluno" list="dl-alunos" maxlength="150" placeholder="Nome completo" required></div>
         </div>
         <div class="grade-3">
-          <div><label class="obrig" for="n-cat">Categoria</label><select id="n-cat" required>${opcoes(CATEGORIA, '', 'Selecione')}</select></div>
+          <div><label class="obrig" for="n-cat">Categoria</label><select id="n-cat" required>${opcoes(CATEGORIA_VISIVEL(), '', 'Selecione')}</select></div>
           <div><label class="obrig" for="n-tipo">Tipo de ocorrência</label><select id="n-tipo" name="tipo_id" required><option value="">Escolha a categoria</option></select></div>
           <div><label for="n-status">Situação</label><select id="n-status" name="status">${opcoes(STATUS, 'ABERTA')}</select></div>
         </div>
@@ -432,11 +433,11 @@
   }
 
   /* ================= Detalhe + chat ================= */
-  const SEL_MSG = '*, usuario:perfis(nome, perfil)';
+  const SEL_MSG = '*, usuario:perfis(nome, funcao:funcoes(nome))';
   function htmlMensagem(m) {
     const u = m.usuario || {};
     return `<div class="msg ${m.usuario_id === eu.id ? 'minha' : ''}" data-id="${m.id}">
-      <div class="quem">${esc(u.nome)} (${esc(PERFIL[u.perfil] || '')}) ${dataHora(m.criado_em)}</div>
+      <div class="quem">${esc(u.nome)}${u.funcao ? ` (${esc(u.funcao.nome)})` : ''} ${dataHora(m.criado_em)}</div>
       <div class="txt">${esc(m.texto)}</div></div>`;
   }
   function adicionarMensagem(m) {
@@ -464,12 +465,12 @@
   async function telaDetalhe(id, atualizacao) {
     const o = ok(await sb.from('v_ocorrencias').select('*').eq('id', id).maybeSingle());
     if (!o) throw new Error('Ocorrência não encontrada.');
+    const comChat = pode('conversar');
+    const encerrada = o.status === 'ENCERRADA';
     const [historico, mensagens, totalAluno] = await Promise.all([
       sb.from('historico_status').select('*, usuario:perfis(nome)').eq('ocorrencia_id', id).order('id').then(ok),
-      sb.from('mensagens').select(SEL_MSG).eq('ocorrencia_id', id).order('id').then(ok),
-      ehGestor()
-        ? sb.from('ocorrencias').select('id', { count: 'exact', head: true }).ilike('aluno', exato(o.aluno)).then((r) => r.count)
-        : Promise.resolve(null),
+      comChat ? sb.from('mensagens').select(SEL_MSG).eq('ocorrencia_id', id).order('id').then(ok) : Promise.resolve([]),
+      sb.from('ocorrencias').select('id', { count: 'exact', head: true }).ilike('aluno', exato(o.aluno)).then((r) => r.count),
     ]);
     if (!atualizacao) {
       auditar('OCORRENCIA_VISUALIZADA', 'ocorrencia', id);
@@ -478,12 +479,27 @@
     const rascunho = atualizacao && $('#chat-texto') ? $('#chat-texto').value : '';
     if (ocAtual !== id) { ocAtual = id; assinarOcorrencia(id); }
 
+    const blocoChat = !comChat ? '' : `
+        <section class="folha chat" aria-label="Conversa da equipe sobre esta ocorrência">
+          <h3>Conversa da equipe</h3>
+          <p class="muted">Fica registrada junto à ocorrência.</p>
+          <div class="chat-msgs" id="chat-msgs" aria-live="polite">
+            ${mensagens.length ? mensagens.map(htmlMensagem).join('') : '<p class="muted vazio">Ninguém comentou ainda.</p>'}
+          </div>
+          ${encerrada
+            ? `<p class="chat-fechado">Ocorrência encerrada: a conversa foi fechada e fica só para consulta.${pode('acompanhar') ? ' Para conversar de novo, reabra a ocorrência mudando a situação.' : ''}</p>`
+            : `<form id="f-chat">
+                 <textarea id="chat-texto" maxlength="2000" placeholder="Escreva uma mensagem" aria-label="Mensagem"></textarea>
+                 <button class="btn" type="submit">Enviar</button>
+               </form>`}
+        </section>`;
+
     conteudo.innerHTML = `
       <div class="cabecalho-pagina">
-        <div><h1>Ocorrência nº ${o.id}</h1><p class="muted">Registrada por ${esc(o.autor_nome)} em ${dataHora(o.criado_em)}</p></div>
+        <div><h1>Ocorrência nº ${o.id}</h1><p class="muted">Registrada por ${esc(o.autor_nome)}${o.autor_funcao ? ` (${esc(o.autor_funcao)})` : ''} em ${dataHora(o.criado_em)}</p></div>
         <div>${carimbo(o.status, true)}</div>
       </div>
-      <div class="detalhe">
+      <div class="detalhe${comChat ? '' : ' sem-chat'}">
         <section class="folha dados">
           <dl>
             <dt>Estudante</dt><dd>${esc(o.aluno)}</dd>
@@ -494,11 +510,11 @@
           </dl>
           <h2>Descrição do fato</h2><div class="texto-livre">${esc(o.descricao)}</div>
           <h2>Providências adotadas</h2><div class="texto-livre">${esc(o.providencias)}</div>
-          ${ehGestor() ? `
           <div class="acoes">
-            <button class="btn sec" type="button" id="b-pdf">Gerar PDF para prontuário</button>
-            <a class="btn sec" href="#/ocorrencias?${qs({ aluno: o.aluno })}">Histórico do estudante (${totalAluno})</a>
+            ${pode('relatorios') ? '<button class="btn sec" type="button" id="b-pdf">Gerar PDF para prontuário</button>' : ''}
+            <a class="btn sec" href="#/ocorrencias?${qs({ aluno: o.aluno })}">Histórico do estudante (${totalAluno == null ? '?' : totalAluno})</a>
           </div>
+          ${pode('acompanhar') ? `
           <h2>Acompanhamento</h2>
           <form id="f-acomp">
             <div class="grade-2">
@@ -507,6 +523,7 @@
             </div>
             <label for="a-prov">Providências (atualize se houver novas)</label>
             <textarea id="a-prov" name="providencias" maxlength="3000">${esc(o.providencias)}</textarea>
+            ${comChat ? '<p class="muted">Ao encerrar, a conversa da equipe é fechada. Reabrir a ocorrência libera a conversa de novo.</p>' : ''}
             <p class="erro" id="a-erro" role="alert"></p>
             <button class="btn" type="submit">Salvar acompanhamento</button>
           </form>` : ''}
@@ -515,45 +532,43 @@
             <li><strong>${esc(STATUS[h.status])}</strong> ${dataHora(h.criado_em)} por ${esc(h.usuario ? h.usuario.nome : '')}${h.observacao ? `<br><span class="muted">${esc(h.observacao)}</span>` : ''}</li>`).join('')}
           </ul>
         </section>
-
-        <section class="folha chat" aria-label="Conversa da equipe sobre esta ocorrência">
-          <h3>Conversa da equipe</h3>
-          <p class="muted">Fica registrada junto à ocorrência.</p>
-          <div class="chat-msgs" id="chat-msgs" aria-live="polite">
-            ${mensagens.length ? mensagens.map(htmlMensagem).join('') : '<p class="muted vazio">Ninguém comentou ainda.</p>'}
-          </div>
-          <form id="f-chat">
-            <textarea id="chat-texto" maxlength="2000" placeholder="Escreva uma mensagem" aria-label="Mensagem"></textarea>
-            <button class="btn" type="submit">Enviar</button>
-          </form>
-        </section>
+        ${blocoChat}
       </div>`;
 
-    const caixa = $('#chat-msgs');
-    caixa.scrollTop = caixa.scrollHeight;
-    $('#chat-texto').value = rascunho;
+    if ($('#chat-msgs')) $('#chat-msgs').scrollTop = $('#chat-msgs').scrollHeight;
 
-    $('#f-chat').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const campo = $('#chat-texto');
-      const texto = campo.value.trim();
-      if (!texto) return;
-      campo.value = '';
-      try { adicionarMensagem(ok(await sb.from('mensagens').insert({ ocorrencia_id: id, texto }).select(SEL_MSG).single())); }
-      catch (err) { campo.value = texto; toast(erroPT(err)); }
-    });
-    $('#chat-texto').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('#f-chat').requestSubmit(); }
-    });
+    if ($('#f-chat')) {
+      $('#chat-texto').value = rascunho;
+      $('#f-chat').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const campo = $('#chat-texto');
+        const texto = campo.value.trim();
+        if (!texto) return;
+        campo.value = '';
+        try { adicionarMensagem(ok(await sb.from('mensagens').insert({ ocorrencia_id: id, texto }).select(SEL_MSG).single())); }
+        catch (err) {
+          campo.value = texto;
+          toast(erroPT(err));
+          if (/encerrada/i.test(err.message)) telaDetalhe(id, true);
+        }
+      });
+      $('#chat-texto').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('#f-chat').requestSubmit(); }
+      });
+    }
 
     if ($('#b-pdf')) {
       $('#b-pdf').addEventListener('click', () => {
         window.SisRoePDF.ficha(o, historico, escola, eu.nome);
         auditar('PDF_OCORRENCIA', 'ocorrencia', id);
       });
+    }
+    if ($('#f-acomp')) {
       $('#f-acomp').addEventListener('submit', async (e) => {
         e.preventDefault();
         const d = lerForm(e.target);
+        if (d.status === 'ENCERRADA' && o.status !== 'ENCERRADA' && comChat &&
+            !confirm('Encerrar a ocorrência? A conversa da equipe será fechada.')) return;
         try {
           ok(await sb.rpc('atualizar_ocorrencia', { p_id: id, p_status: d.status, p_providencias: d.providencias, p_observacao: d.observacao }));
           toast('Acompanhamento salvo.');
@@ -574,6 +589,7 @@
   }
 
   async function telaPainel(p) {
+    if (!pode('painel')) throw new Error('Sua função não tem acesso ao painel.');
     const d = ok(await sb.rpc('painel', {
       p_de: p.de || null, p_ate: p.ate || null, p_turma: p.turma || null,
     }));
@@ -620,6 +636,7 @@
 
   /* ================= Relatórios ================= */
   async function telaRelatorios() {
+    if (!pode('relatorios')) throw new Error('Sua função não tem acesso a relatórios.');
     const d = new Date();
     const inicioMes = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
     conteudo.innerHTML = `
@@ -631,7 +648,7 @@
           <div><label for="rate">Até</label><input id="rate" type="date" name="ate" value="${hoje()}"></div>
           <div><label for="rt">Turma</label><input id="rt" name="turma" list="dl-turmas" placeholder="Todas"></div>
           <div><label for="ra">Estudante</label><input id="ra" name="aluno" list="dl-alunos" placeholder="Todos"></div>
-          <div><label for="rc">Categoria</label><select id="rc" name="categoria">${opcoes(CATEGORIA, '', 'Todas')}</select></div>
+          <div><label for="rc">Categoria</label><select id="rc" name="categoria">${opcoes(CATEGORIA_VISIVEL(), '', 'Todas')}</select></div>
           <div><label for="rs">Situação</label><select id="rs" name="status">${opcoes(STATUS, '', 'Todas')}</select></div>
         </div>
         <p class="erro" id="r-erro" role="alert"></p>
@@ -677,41 +694,41 @@
 
   /* ================= Usuários (Direção) ================= */
   async function telaUsuarios() {
-    const lista = ok(await sb.rpc('listar_usuarios'));
+    if (!ehDirecao()) throw new Error('Somente a Direção gerencia usuários.');
+    const [lista, funcoes] = await Promise.all([
+      sb.rpc('listar_usuarios').then(ok),
+      sb.from('funcoes').select('id, nome, direcao').order('direcao', { ascending: false }).order('nome').then(ok),
+    ]);
+    const opcoesFuncao = (sel, vazio) =>
+      (vazio ? `<option value="">${esc(vazio)}</option>` : '') +
+      funcoes.map((f) => `<option value="${f.id}" ${f.id === sel ? 'selected' : ''}>${esc(f.nome)}</option>`).join('');
+    const pendentes = lista.filter((u) => !u.funcao_id).length;
+
     conteudo.innerHTML = `
-      <div class="cabecalho-pagina"><div><h1>Usuários</h1><p class="muted">Cada pessoa entra com o próprio e-mail e vê apenas o que compete à sua função.</p></div></div>
+      <div class="cabecalho-pagina"><div><h1>Usuários</h1><p class="muted">Cada pessoa entra com o próprio e-mail e vê o que a função dela permite. As funções são definidas em <a href="#/funcoes">Funções de acesso</a>.</p></div></div>
       <form class="folha" id="f-user">
         <h3>Cadastrar pessoa</h3>
         <div class="grade-3">
           <div><label class="obrig" for="u-nome">Nome</label><input id="u-nome" name="nome" maxlength="120" required></div>
           <div><label class="obrig" for="u-email">E-mail</label><input id="u-email" name="email" type="email" required></div>
-          <div><label class="obrig" for="u-perfil">Perfil</label><select id="u-perfil" name="perfil" required>${opcoes(PERFIL, '', 'Selecione')}</select></div>
+          <div><label class="obrig" for="u-funcao">Função</label><select id="u-funcao" name="funcao" required>${opcoesFuncao(null, 'Selecione')}</select></div>
         </div>
         <p class="erro" id="u-erro" role="alert"></p>
         <button class="btn" type="submit">Cadastrar</button>
       </form>
       <div id="u-senha"></div>
       <h2>Equipe</h2>
+      ${pendentes ? `<p class="atencao">${pendentes} pessoa(s) aguardando liberação: escolha uma função para liberar o acesso.</p>` : ''}
       <div class="tabela-wrap"><table>
-        <thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Duplo fator</th><th>Situação</th><th>Ações</th></tr></thead>
+        <thead><tr><th>Nome</th><th>E-mail</th><th>Função</th><th>Situação</th><th>Ações</th></tr></thead>
         <tbody>${lista.map((u) => `
           <tr data-id="${u.id}" data-nome="${esc(u.nome)}">
-            <td>${esc(u.nome)}${u.trocar_senha ? '<br><span class="muted">aguardando 1º acesso</span>' : ''}</td>
+            <td>${esc(u.nome)}</td>
             <td>${esc(u.email)}</td>
-            <td><select class="u-perfil" aria-label="Perfil de ${esc(u.nome)}" ${u.id === eu.id ? 'disabled' : ''}>${opcoes(PERFIL, u.perfil, u.perfil ? null : 'Aguardando liberação')}</select></td>
-            <td>${u.duplo_fator ? 'Ativo' : 'Não configurado'}</td>
+            <td><select class="u-funcao" aria-label="Função de ${esc(u.nome)}" ${u.id === eu.id ? 'disabled' : ''}>${opcoesFuncao(u.funcao_id, u.funcao_id ? null : 'Aguardando liberação')}</select></td>
             <td>${u.ativo ? 'Ativo' : '<span class="atencao">Desativado</span>'}</td>
-            <td>
-              ${u.id !== eu.id ? `<button class="btn sec peq" data-acao="senha">Nova senha</button>` : ''}
-              ${u.duplo_fator && u.id !== eu.id ? '<button class="btn sec peq" data-acao="2fa">Refazer duplo fator</button>' : ''}
-              ${u.id !== eu.id ? `<button class="btn ${u.ativo ? 'perigo' : 'sec'} peq" data-acao="ativo" data-valor="${u.ativo ? 0 : 1}">${u.ativo ? 'Desativar' : 'Reativar'}</button>` : ''}
-            </td>
+            <td>${u.id !== eu.id ? `<button class="btn ${u.ativo ? 'perigo' : 'sec'} peq" data-acao="ativo" data-valor="${u.ativo ? 0 : 1}">${u.ativo ? 'Desativar' : 'Reativar'}</button>` : ''}</td>
           </tr>`).join('')}</tbody></table></div>`;
-
-    const mostrarSenha = (nome, email, senha) => {
-      $('#u-senha').innerHTML = `<div class="aviso-ok">Acesso de <strong>${esc(nome)}</strong>: e-mail ${esc(email)}, senha provisória <span class="segredo">${esc(senha)}</span><br>
-        Entregue pessoalmente. Ela só aparece agora e será trocada no primeiro acesso.</div>`;
-    };
 
     $('#f-user').addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -719,16 +736,15 @@
       botao.disabled = true;
       try {
         const d = lerForm(e.target);
-        const senha = senhaProvisoria();
         // Cliente separado: cria a conta sem desconectar a Direção
         const tmp = window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseAnonKey, {
           auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, storageKey: 'sisroe-cadastro' },
         });
-        const r = ok(await tmp.auth.signUp({ email: d.email.trim(), password: senha, options: { data: { nome: d.nome.trim() } } }));
+        const r = ok(await tmp.auth.signUp({ email: d.email.trim(), password: senhaDescartavel(), options: { data: { nome: d.nome.trim() } } }));
         if (!r.user || (r.user.identities && r.user.identities.length === 0)) throw new Error('Esse e-mail já está cadastrado.');
-        ok(await sb.rpc('definir_perfil', { p_usuario: r.user.id, p_perfil: d.perfil, p_trocar_senha: true }));
+        ok(await sb.rpc('definir_funcao', { p_usuario: r.user.id, p_funcao: Number(d.funcao) }));
         await telaUsuarios();
-        mostrarSenha(d.nome, d.email, senha);
+        $('#u-senha').innerHTML = `<div class="aviso-ok"><strong>${esc(d.nome)}</strong> já pode entrar. No site, basta digitar <strong>${esc(d.email.trim())}</strong> e usar o código que chegar nesse e-mail.</div>`;
       } catch (err) {
         $('#u-erro').textContent = erroPT(err);
         botao.disabled = false;
@@ -738,40 +754,129 @@
     $$('tbody tr[data-id]').forEach((tr) => {
       const id = tr.dataset.id;
       const nome = tr.dataset.nome;
-      $('.u-perfil', tr).addEventListener('change', async (e) => {
+      $('.u-funcao', tr).addEventListener('change', async (e) => {
+        if (!e.target.value) return;
         try {
-          ok(await sb.rpc('definir_perfil', { p_usuario: id, p_perfil: e.target.value }));
-          toast('Perfil salvo.');
+          ok(await sb.rpc('definir_funcao', { p_usuario: id, p_funcao: Number(e.target.value) }));
+          toast(`Função de ${nome} salva.`);
           telaUsuarios();
         } catch (err) { toast(erroPT(err)); telaUsuarios(); }
       });
-      $$('button[data-acao]', tr).forEach((b) => b.addEventListener('click', async () => {
-        const acao = b.dataset.acao;
-        const pergunta = {
-          senha: `Gerar nova senha provisória para ${nome}?`,
-          '2fa': `${nome} terá de configurar o duplo fator de novo no próximo acesso. Continuar?`,
-          ativo: b.dataset.valor === '0' ? `Desativar o acesso de ${nome}?` : `Reativar o acesso de ${nome}?`,
-        }[acao];
-        if (!confirm(pergunta)) return;
+      const b = $('button[data-acao="ativo"]', tr);
+      if (b) b.addEventListener('click', async () => {
+        if (!confirm(b.dataset.valor === '0' ? `Desativar o acesso de ${nome}?` : `Reativar o acesso de ${nome}?`)) return;
         try {
-          if (acao === 'senha') {
-            const senha = ok(await sb.rpc('redefinir_senha', { p_usuario: id }));
-            await telaUsuarios();
-            mostrarSenha(nome, tr.cells[1].textContent, senha);
-          } else if (acao === '2fa') {
-            ok(await sb.rpc('resetar_2fa', { p_usuario: id }));
-            telaUsuarios();
-          } else {
-            ok(await sb.from('perfis').update({ ativo: b.dataset.valor === '1' }).eq('id', id));
-            telaUsuarios();
-          }
+          ok(await sb.from('perfis').update({ ativo: b.dataset.valor === '1' }).eq('id', id));
+          telaUsuarios();
         } catch (err) { toast(erroPT(err)); }
-      }));
+      });
     });
   }
 
-  /* ================= Configurações (Direção) ================= */
+  /* ================= Funções de acesso (Direção) ================= */
+  async function telaFuncoes(editarId) {
+    if (!ehDirecao()) throw new Error('Somente a Direção cria e altera funções.');
+    const [funcoes, pessoas] = await Promise.all([
+      sb.from('funcoes').select('*').order('direcao', { ascending: false }).order('nome').then(ok),
+      sb.rpc('listar_usuarios').then(ok),
+    ]);
+    const qtd = (id) => pessoas.filter((u) => u.funcao_id === id).length;
+    const resumo = (f) => {
+      if (f.direcao) return 'Acesso total, inclusive usuários e funções.';
+      const itens = PERMISSOES.filter(([k]) => f[k]).map(([, rot]) => rot.toLowerCase());
+      const cats = f.categorias.map((c) => CATEGORIA[c].split(' (')[0]).join(', ');
+      return `${itens.length ? itens.join('; ') : 'nenhuma permissão'}. Categorias: ${cats}.`;
+    };
+    const emEdicao = funcoes.find((f) => f.id === editarId && !f.direcao);
+    const f0 = emEdicao || { nome: '', descricao: '', registrar: true, conversar: true, categorias: Object.keys(CATEGORIA) };
+
+    conteudo.innerHTML = `
+      <div class="cabecalho-pagina"><div><h1>Funções de acesso</h1>
+        <p class="muted">Cada pessoa tem uma função, e a função define o que ela pode ver e fazer. Só a Direção cria e altera funções; a função Direção é fixa.</p></div>
+        ${emEdicao ? '' : '<button class="btn" type="button" id="b-nova-funcao">Nova função</button>'}
+      </div>
+
+      <form class="folha ${emEdicao ? '' : 'oculto'}" id="f-funcao">
+        <h3>${emEdicao ? `Editar função: ${esc(emEdicao.nome)}` : 'Nova função'}</h3>
+        <div class="grade-2">
+          <div><label class="obrig" for="fn-nome">Nome</label><input id="fn-nome" name="nome" maxlength="60" required value="${esc(f0.nome)}" placeholder="Ex.: Administrador, Psicólogo(a), Secretaria"></div>
+          <div><label for="fn-desc">Descrição</label><input id="fn-desc" name="descricao" maxlength="300" value="${esc(f0.descricao)}" placeholder="Para que serve esta função"></div>
+        </div>
+        <label>O que esta função pode fazer</label>
+        <ul class="permissoes">${PERMISSOES.map(([k, rot, ajuda]) => `
+          <li><input type="checkbox" id="pm-${k}" name="${k}" ${f0[k] ? 'checked' : ''}>
+              <label for="pm-${k}">${esc(rot)}${ajuda ? `<span class="muted">${esc(ajuda)}</span>` : ''}</label></li>`).join('')}
+        </ul>
+        <label style="margin-top:1rem">Categorias de ocorrência que esta função enxerga</label>
+        <div class="categorias-check">${Object.entries(CATEGORIA).map(([c, rot]) => `
+          <label><input type="checkbox" name="cat-${c}" ${f0.categorias.includes(c) ? 'checked' : ''}> ${esc(rot)}</label>`).join('')}
+        </div>
+        <p class="muted" style="margin-top:.6rem">Cadastrar pessoas e criar funções é sempre exclusivo da Direção.</p>
+        <p class="erro" id="fn-erro" role="alert"></p>
+        <div class="acoes">
+          <button class="btn" type="submit">${emEdicao ? 'Salvar alterações' : 'Criar função'}</button>
+          <button class="btn sec" type="button" id="b-cancelar-funcao">Cancelar</button>
+        </div>
+      </form>
+
+      <h2>Funções cadastradas</h2>
+      <div class="tabela-wrap"><table>
+        <thead><tr><th>Função</th><th>Pode</th><th class="num">Pessoas</th><th>Ações</th></tr></thead>
+        <tbody>${funcoes.map((f) => `
+          <tr>
+            <td><strong>${esc(f.nome)}</strong>${f.descricao ? `<br><span class="muted">${esc(f.descricao)}</span>` : ''}</td>
+            <td class="resumo-perm">${esc(resumo(f))}</td>
+            <td class="num">${qtd(f.id)}</td>
+            <td>${f.direcao ? '<span class="muted">Fixa</span>' : `
+              <button class="btn sec peq" data-editar="${f.id}">Editar</button>
+              <button class="btn perigo peq" data-excluir="${f.id}" data-nome="${esc(f.nome)}" data-qtd="${qtd(f.id)}">Excluir</button>`}</td>
+          </tr>`).join('')}</tbody>
+      </table></div>`;
+
+    const form = $('#f-funcao');
+    if ($('#b-nova-funcao')) {
+      $('#b-nova-funcao').addEventListener('click', () => {
+        form.classList.remove('oculto');
+        $('#b-nova-funcao').classList.add('oculto');
+        $('#fn-nome').focus();
+      });
+    }
+    $('#b-cancelar-funcao').addEventListener('click', () => telaFuncoes());
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData(form);
+      const dados = { nome: fd.get('nome').trim(), descricao: fd.get('descricao').trim() };
+      PERMISSOES.forEach(([k]) => { dados[k] = fd.get(k) === 'on'; });
+      dados.categorias = Object.keys(CATEGORIA).filter((c) => fd.get('cat-' + c) === 'on');
+      try {
+        if (!dados.categorias.length) throw new Error('Marque pelo menos uma categoria de ocorrência.');
+        if (emEdicao) ok(await sb.from('funcoes').update(dados).eq('id', emEdicao.id));
+        else ok(await sb.from('funcoes').insert(dados));
+        toast(emEdicao ? 'Função atualizada. Vale no próximo carregamento de página de quem a usa.' : 'Função criada. Já pode ser escolhida em Usuários.');
+        telaFuncoes();
+      } catch (err) {
+        $('#fn-erro').textContent = /duplicate|unique/i.test(err.message) ? 'Já existe uma função com esse nome.' : erroPT(err);
+      }
+    });
+
+    $$('button[data-editar]').forEach((b) => b.addEventListener('click', () => {
+      telaFuncoes(Number(b.dataset.editar)).then(() => $('#fn-nome').focus());
+    }));
+    $$('button[data-excluir]').forEach((b) => b.addEventListener('click', async () => {
+      if (Number(b.dataset.qtd) > 0) {
+        toast(`Há ${b.dataset.qtd} pessoa(s) com a função ${b.dataset.nome}. Mude a função delas em Usuários antes de excluir.`);
+        return;
+      }
+      if (!confirm(`Excluir a função ${b.dataset.nome}?`)) return;
+      try { ok(await sb.from('funcoes').delete().eq('id', b.dataset.excluir)); telaFuncoes(); }
+      catch (err) { toast(/foreign key|violates/i.test(err.message) ? 'Há pessoas com essa função. Mude a função delas antes de excluir.' : erroPT(err)); }
+    }));
+  }
+
+  /* ================= Configurações ================= */
   async function telaConfiguracoes() {
+    if (!pode('configuracoes')) throw new Error('Sua função não tem acesso às configurações.');
     const lista = ok(await sb.from('tipos_ocorrencia').select('*').order('nome'));
     conteudo.innerHTML = `
       <div class="cabecalho-pagina"><div><h1>Configurações</h1></div></div>
@@ -781,8 +886,6 @@
           <div><label class="obrig" for="c-nome">Nome da escola</label><input id="c-nome" name="escola_nome" maxlength="150" required value="${esc(escola.escola_nome)}"></div>
           <div><label for="c-end">Endereço (aparece nos PDFs)</label><input id="c-end" name="escola_endereco" maxlength="200" value="${esc(escola.escola_endereco)}"></div>
           <div><label for="c-lim">Destacar estudantes a partir de quantas ocorrências</label><input id="c-lim" name="limite_atencao" type="number" min="1" max="100" value="${escola.limite_atencao}"></div>
-          <div><label for="c-2fa">Verificação em duas etapas</label>
-            <select id="c-2fa" name="exigir_2fa"><option value="true" ${escola.exigir_2fa ? 'selected' : ''}>Obrigatória para todos (recomendado)</option><option value="false" ${escola.exigir_2fa ? '' : 'selected'}>Opcional</option></select></div>
         </div>
         <p class="erro" id="c-erro" role="alert"></p>
         <button class="btn" type="submit">Salvar configurações</button>
@@ -812,7 +915,7 @@
       try {
         ok(await sb.from('configuracoes').update({
           escola_nome: d.escola_nome.trim(), escola_endereco: d.escola_endereco.trim(),
-          limite_atencao: Number(d.limite_atencao) || 3, exigir_2fa: d.exigir_2fa === 'true',
+          limite_atencao: Number(d.limite_atencao) || 3,
         }).eq('id', 1));
         await carregarEscola();
         toast('Configurações salvas.');
@@ -838,11 +941,12 @@
 
   /* ================= Auditoria (Direção) ================= */
   const ACOES = ['LOGIN', 'LOGOUT', 'OCORRENCIA_CRIADA', 'OCORRENCIA_VISUALIZADA', 'OCORRENCIA_ATUALIZADA', 'MENSAGEM_ENVIADA',
-    'PDF_OCORRENCIA', 'PDF_RELATORIO', 'SENHA_DEFINIDA', 'SENHA_ALTERADA', '2FA_ATIVADO', '2FA_DESATIVADO',
-    'USUARIO_PERFIL', 'USUARIO_ATIVADO', 'USUARIO_DESATIVADO', 'USUARIO_SENHA_RESETADA', 'USUARIO_2FA_RESETADO',
+    'PDF_OCORRENCIA', 'PDF_RELATORIO', 'SAIR_DE_TODOS',
+    'USUARIO_FUNCAO', 'USUARIO_ATIVADO', 'USUARIO_DESATIVADO', 'FUNCAO_ALTERADA',
     'TIPO_ALTERADO', 'CONFIG_ALTERADA'];
 
   async function telaAuditoria(p) {
+    if (!pode('auditoria')) throw new Error('Sua função não tem acesso à auditoria.');
     const pagina = Math.max(1, Number(p.pagina) || 1);
     const tam = 50;
     let q = sb.from('auditoria').select('*, usuario:perfis(nome)', { count: 'exact' });
@@ -873,72 +977,26 @@
 
   /* ================= Minha conta ================= */
   async function telaConta() {
-    const fatores = ok(await sb.auth.mfa.listFactors());
-    const ativo = fatores.totp.length > 0;
     conteudo.innerHTML = `
-      <div class="cabecalho-pagina"><div><h1>Minha conta</h1><p class="muted">${esc(eu.nome)}, ${esc(PERFIL[eu.perfil])}, ${esc(eu.email)}</p></div></div>
-      <div class="grade-2" style="gap:1rem">
-        <form class="folha" id="f-minha-senha">
-          <h3>Trocar senha</h3>
-          <label for="s-nova">Nova senha</label><input id="s-nova" type="password" autocomplete="new-password" minlength="8" required>
-          <label for="s-nova2">Repita a nova senha</label><input id="s-nova2" type="password" autocomplete="new-password" minlength="8" required>
-          <p class="erro" id="s-erro" role="alert"></p>
-          <button class="btn" type="submit">Salvar senha</button>
-        </form>
-        <section class="folha">
-          <h3>Verificação em duas etapas</h3>
-          ${ativo
-            ? `<p>Ativa. Cada acesso pede o código do aplicativo autenticador.</p>
-               ${escola.exigir_2fa ? '<p class="muted">Obrigatória nesta escola. Se trocar de celular, peça à Direção para refazer.</p>'
-                 : '<p class="erro" id="d-erro"></p><button class="btn perigo" id="b-desativar" type="button">Desativar</button>'}`
-            : `<p>Desativada. Ative para proteger os dados dos estudantes.</p>
-               <button class="btn" type="button" id="b-ativar">Ativar</button>
-               <div id="ativar-2fa" class="oculto">
-                 <img id="c-qr" class="qr" alt="QR Code para o aplicativo autenticador" width="220" height="220">
-                 <p id="c-seg" class="segredo"></p>
-                 <label for="c-cod">Código do aplicativo</label><input id="c-cod" inputmode="numeric" maxlength="6">
-                 <p class="erro" id="c-erro"></p>
-                 <button class="btn" type="button" id="b-confirmar">Confirmar</button>
-               </div>`}
-        </section>
-      </div>`;
-
-    $('#f-minha-senha').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const nova = $('#s-nova').value;
-      try {
-        if (nova !== $('#s-nova2').value) throw new Error('As senhas não são iguais.');
-        const erro = validarSenha(nova);
-        if (erro) throw new Error(erro);
-        ok(await sb.auth.updateUser({ password: nova }));
-        auditar('SENHA_ALTERADA', 'usuario', eu.id);
-        e.target.reset();
-        toast('Senha alterada.');
-      } catch (err) { $('#s-erro').textContent = erroPT(err); }
+      <div class="cabecalho-pagina"><div><h1>Minha conta</h1></div></div>
+      <section class="folha" style="max-width:560px">
+        <div class="dados"><dl>
+          <dt>Nome</dt><dd>${esc(eu.nome)}</dd>
+          <dt>Função</dt><dd>${esc(eu.funcao.nome)}</dd>
+          <dt>E-mail de acesso</dt><dd>${esc(eu.email)}</dd>
+        </dl></div>
+        <p class="muted" style="margin-top:1rem">Você entra digitando este e-mail e o código que chega nele. Proteja a sua caixa de e-mail: quem tiver acesso a ela consegue entrar no SisRoe.</p>
+        <h2>Aparelhos conectados</h2>
+        <p class="muted">Esqueceu o SisRoe aberto em outro computador ou perdeu o celular? Encerre o acesso em todos os aparelhos. Para voltar, basta pedir um novo código.</p>
+        <button class="btn perigo" type="button" id="b-global">Sair de todos os aparelhos</button>
+      </section>`;
+    $('#b-global').addEventListener('click', async () => {
+      if (!confirm('Encerrar o acesso em todos os aparelhos, inclusive neste?')) return;
+      try { await auditar('SAIR_DE_TODOS', 'usuario', eu.id); } catch (e) { /* segue */ }
+      await sb.auth.signOut({ scope: 'global' });
+      location.hash = '';
+      location.reload();
     });
-    if ($('#b-ativar')) {
-      $('#b-ativar').addEventListener('click', async () => {
-        try {
-          await iniciarCadastro2FA('#c-qr', '#c-seg');
-          $('#ativar-2fa').classList.remove('oculto');
-          $('#b-ativar').classList.add('oculto');
-        } catch (err) { toast(erroPT(err)); }
-      });
-      $('#b-confirmar').addEventListener('click', async () => {
-        try { await confirmar2FA($('#c-cod').value); toast('Verificação em duas etapas ativada.'); telaConta(); }
-        catch (err) { $('#c-erro').textContent = erroPT(err); }
-      });
-    }
-    if ($('#b-desativar')) {
-      $('#b-desativar').addEventListener('click', async () => {
-        if (!confirm('Desativar a verificação em duas etapas?')) return;
-        try {
-          for (const f of fatores.totp) ok(await sb.auth.mfa.unenroll({ factorId: f.id }));
-          auditar('2FA_DESATIVADO', 'usuario', eu.id);
-          telaConta();
-        } catch (err) { $('#d-erro').textContent = erroPT(err); }
-      });
-    }
   }
 
   /* ================= Início ================= */

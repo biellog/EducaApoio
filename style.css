@@ -214,3 +214,17 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 /* Versão web */
 .cartao-login h3 { margin-top: .2rem; }
 #aguardando .btn { width: 100%; justify-content: center; margin-top: 1rem; }
+.acoes-login { display: flex; justify-content: space-between; gap: .5rem; margin-top: .8rem; }
+.link { background: none; border: 0; padding: .2rem 0; font: inherit; font-size: .9rem; color: var(--caneta); text-decoration: underline; cursor: pointer; }
+.link:disabled { color: var(--tinta-2); cursor: default; text-decoration: none; }
+.detalhe.sem-chat { grid-template-columns: minmax(0, 1fr); max-width: 820px; }
+.chat-fechado { margin: .7rem 0 0; padding: .6rem .8rem; background: var(--papel); border-left: 3px solid var(--verde); font-size: .9rem; color: var(--tinta-2); }
+.permissoes { list-style: none; padding: 0; margin: .4rem 0 0; }
+.permissoes li { display: flex; gap: .6rem; align-items: flex-start; padding: .45rem 0; border-bottom: 1px solid var(--linha); }
+.permissoes input { width: auto; margin-top: .25rem; }
+.permissoes label { margin: 0; font-weight: 600; }
+.permissoes .muted { display: block; font-weight: 400; }
+.categorias-check { display: flex; gap: 1.2rem; flex-wrap: wrap; margin-top: .4rem; }
+.categorias-check label { display: flex; gap: .4rem; align-items: center; margin: 0; font-weight: 500; }
+.categorias-check input { width: auto; }
+.resumo-perm { font-size: .85rem; color: var(--tinta-2); }
