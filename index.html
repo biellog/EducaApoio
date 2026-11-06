@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>SisRoe</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- ============ Entrada ============ -->
+  <main class="tela-login" id="tela-login">
+    <div class="cartao-login">
+      <p class="marca">SisRoe</p>
+      <p class="marca-sub" id="escola-login">Registro de ocorrências escolares</p>
+
+      <p id="carregando" class="muted">Carregando…</p>
+
+      <div id="sem-config" class="oculto">
+        <h3>Falta configurar</h3>
+        <p class="muted">Preencha o arquivo <strong>config.js</strong> no repositório com o endereço e a chave do seu projeto Supabase. O passo a passo está no README.</p>
+      </div>
+
+      <form id="f-login" class="oculto">
+        <label for="email">E-mail</label>
+        <input id="email" type="email" autocomplete="username" required>
+        <label for="senha">Senha</label>
+        <input id="senha" type="password" autocomplete="current-password" required>
+        <button class="btn" type="submit">Entrar</button>
+      </form>
+
+      <form id="f-totp" class="oculto">
+        <h3>Verificação em duas etapas</h3>
+        <p class="muted">Abra o aplicativo autenticador no celular e digite o código de 6 dígitos.</p>
+        <label for="codigo">Código</label>
+        <input id="codigo" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required>
+        <button class="btn" type="submit">Confirmar</button>
+      </form>
+
+      <form id="f-senha" class="oculto">
+        <h3>Crie sua senha</h3>
+        <p class="muted">A senha provisória precisa ser trocada. Use pelo menos 8 caracteres, com letras e números.</p>
+        <label for="nova">Nova senha</label>
+        <input id="nova" type="password" autocomplete="new-password" minlength="8" required>
+        <label for="nova2">Repita a nova senha</label>
+        <input id="nova2" type="password" autocomplete="new-password" minlength="8" required>
+        <button class="btn" type="submit">Salvar senha</button>
+      </form>
+
+      <form id="f-2fa" class="oculto">
+        <h3>Ative a verificação em duas etapas</h3>
+        <p class="muted">Instale um aplicativo autenticador gratuito (Google Authenticator, Microsoft Authenticator ou Aegis), escaneie o código e digite o número que aparecer.</p>
+        <img id="qr" class="qr" alt="QR Code para o aplicativo autenticador" width="220" height="220">
+        <p class="muted">Sem câmera? Digite esta chave no aplicativo:</p>
+        <p id="segredo" class="segredo"></p>
+        <label for="codigo2">Código do aplicativo</label>
+        <input id="codigo2" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required>
+        <button class="btn" type="submit">Ativar e entrar</button>
+      </form>
+
+      <div id="aguardando" class="oculto">
+        <h3>Acesso aguardando liberação</h3>
+        <p class="muted">Sua conta existe, mas a Direção ainda não definiu o seu perfil (ou o acesso foi desativado). Fale com a Direção da escola.</p>
+        <button class="btn sec" type="button" id="sair-aguardando">Sair</button>
+      </div>
+
+      <p id="erro" class="erro" role="alert"></p>
+    </div>
+  </main>
+
+  <!-- ============ Aplicação ============ -->
+  <div class="app oculto" id="tela-app">
+    <aside class="lateral" id="lateral">
+      <p class="marca">SisRoe</p>
+      <p class="escola" id="escola-app"></p>
+      <nav id="menu" aria-label="Menu principal"></nav>
+      <div class="rodape-lateral">
+        <strong id="nome-usuario"></strong>
+        <span id="perfil-usuario"></span><br>
+        <button type="button" id="sair">Sair</button>
+      </div>
+    </aside>
+
+    <div class="principal">
+      <header class="topo">
+        <button type="button" class="btn sec peq menu-movel" id="abrir-menu" aria-label="Abrir menu">Menu</button>
+        <div class="sino">
+          <button type="button" id="botao-sino" aria-haspopup="true" aria-expanded="false">Avisos</button>
+          <span class="contador oculto" id="contador"></span>
+          <div class="lista-notif oculto" id="lista-notif"></div>
+        </div>
+      </header>
+      <main class="conteudo" id="conteudo" tabindex="-1"></main>
+    </div>
+  </div>
+  <div class="toast oculto" id="toast" role="status"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.47.10/dist/umd/supabase.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
+  <script src="config.js"></script>
+  <script src="pdf.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
