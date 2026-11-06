@@ -1,146 +1,137 @@
 -- =====================================================================
--- SisRoe - Sistema de Registro de Ocorrências Escolares
--- Esquema do banco para o Supabase. Rode UMA VEZ no SQL Editor de um
--- projeto novo (Supabase > SQL Editor > New query > colar > Run).
+-- SisRoe - Migração: funções de acesso configuráveis + chat fechado em
+-- ocorrências encerradas (inclui também a troca para código no e-mail).
+-- Rode UMA VEZ no SQL Editor, em um banco que já tem o SisRoe instalado.
+-- Ocorrências, conversas, usuários e auditoria são mantidos.
 -- =====================================================================
 
-create extension if not exists pgcrypto with schema extensions;
+-- 1. Restos da versão com senha e autenticador (se ainda existirem)
+drop function if exists public.redefinir_senha(uuid);
+drop function if exists public.resetar_2fa(uuid);
+drop function if exists public.senha_trocada();
+drop function if exists public.definir_perfil(uuid, text, boolean);
+drop function if exists public.definir_perfil(uuid, text);
+drop function if exists public.listar_usuarios();
+alter table public.configuracoes drop column if exists exigir_2fa;
+alter table public.perfis drop column if exists trocar_senha;
+delete from auth.mfa_factors;
+
+-- 2. Tabela de funções
+-- Funções de acesso (categorias de usuários). A Direção cria e configura.
+create table if not exists public.funcoes (
+  id bigint generated always as identity primary key,
+  nome text not null unique check (length(trim(nome)) between 2 and 60),
+  descricao text not null default '' check (length(descricao) <= 300),
+  direcao boolean not null default false,       -- função fixa da Direção: acesso total
+  registrar boolean not null default true,      -- registrar ocorrências
+  ver_todas boolean not null default false,     -- ver ocorrências de todos (senão, só as próprias)
+  conversar boolean not null default true,      -- participar do chat das ocorrências
+  acompanhar boolean not null default false,    -- atualizar situação e providências
+  painel boolean not null default false,        -- painel de indicadores
+  relatorios boolean not null default false,    -- PDFs e relatórios
+  configuracoes boolean not null default false, -- dados da escola e tipos de ocorrência
+  auditoria boolean not null default false,     -- consultar a auditoria
+  categorias text[] not null default array['ADMINISTRATIVA','PEDAGOGICA','CONVIVA']
+    check (cardinality(categorias) > 0 and categorias <@ array['ADMINISTRATIVA','PEDAGOGICA','CONVIVA']),
+  criado_em timestamptz not null default now()
+);
+create unique index if not exists funcoes_uma_direcao on public.funcoes (direcao) where direcao;
+
+insert into public.funcoes (nome, descricao, direcao, registrar, ver_todas, conversar, acompanhar, painel, relatorios, configuracoes, auditoria) values
+  ('Direção', 'Acesso total. Única função que cadastra pessoas e cria funções.', true, true, true, true, true, true, true, true, true),
+  ('Coordenação', 'Acompanha todas as ocorrências.', false, true, true, true, true, true, true, false, false),
+  ('Agente de Organização Escolar', 'Registra e acompanha as próprias ocorrências.', false, true, false, true, false, false, false, false, false),
+  ('Professor(a)', 'Registra e acompanha as próprias ocorrências.', false, true, false, true, false, false, false, false, false)
+on conflict (nome) do nothing;
+
+-- 3. Cada pessoa recebe a função equivalente ao perfil que já tinha
+alter table public.perfis add column if not exists funcao_id bigint references public.funcoes(id) on delete restrict;
+
+do $$
+begin
+  if exists (select 1 from information_schema.columns
+             where table_schema = 'public' and table_name = 'perfis' and column_name = 'perfil') then
+    update public.perfis p set funcao_id = f.id
+    from public.funcoes f
+    where p.funcao_id is null
+      and f.nome = case p.perfil
+                     when 'DIRECAO' then 'Direção'
+                     when 'COORDENACAO' then 'Coordenação'
+                     when 'AOE' then 'Agente de Organização Escolar'
+                     when 'PROFESSOR' then 'Professor(a)'
+                   end;
+  end if;
+end $$;
+
+-- 4. Remove o que dependia dos perfis fixos
+drop view if exists public.v_ocorrencias;
+drop policy if exists "direção altera a configuração" on public.configuracoes;
+drop policy if exists "direção cria tipos" on public.tipos_ocorrencia;
+drop policy if exists "direção altera tipos" on public.tipos_ocorrencia;
+drop policy if exists "direção vê a auditoria" on public.auditoria;
+
+-- =====================================================================
+-- LÓGICA: permissões, gatilhos, regras de acesso e funções do site.
+-- (Esta parte pode ser rodada de novo sem perder dados.)
+-- =====================================================================
+
+alter table public.funcoes enable row level security;
 
 -- ---------------------------------------------------------------------
--- Tabelas
+-- Permissões
 -- ---------------------------------------------------------------------
 
-create table public.configuracoes (
-  id int primary key default 1 check (id = 1),
-  escola_nome text not null default 'Unidade Escolar',
-  escola_endereco text not null default '',
-  exigir_2fa boolean not null default true,
-  limite_atencao int not null default 3 check (limite_atencao between 1 and 100)
-);
-insert into public.configuracoes (id) values (1);
+-- A pessoa logada pode fazer isto? ('acesso' = tem função e está ativa)
+create or replace function public.pode(p_perm text) returns boolean
+language plpgsql stable security definer set search_path = public as $$
+declare fu public.funcoes;
+begin
+  select f.* into fu
+  from public.perfis pe join public.funcoes f on f.id = pe.funcao_id
+  where pe.id = auth.uid() and pe.ativo;
+  if not found then return false; end if;
+  if fu.direcao then return true; end if;
+  return case p_perm
+    when 'acesso' then true
+    when 'registrar' then fu.registrar
+    when 'ver_todas' then fu.ver_todas
+    when 'conversar' then fu.conversar
+    when 'acompanhar' then fu.acompanhar
+    when 'painel' then fu.painel
+    when 'relatorios' then fu.relatorios
+    when 'configuracoes' then fu.configuracoes
+    when 'auditoria' then fu.auditoria
+    else false
+  end;
+end $$;
 
-create table public.perfis (
-  id uuid primary key references auth.users(id) on delete cascade,
-  nome text not null,
-  email text not null,
-  perfil text check (perfil in ('AOE','PROFESSOR','COORDENACAO','DIRECAO')), -- nulo = aguardando liberação
-  ativo boolean not null default true,
-  trocar_senha boolean not null default false,
-  criado_em timestamptz not null default now()
-);
-
-create table public.tipos_ocorrencia (
-  id bigint generated always as identity primary key,
-  nome text not null check (length(trim(nome)) between 1 and 80),
-  categoria text not null check (categoria in ('ADMINISTRATIVA','PEDAGOGICA','CONVIVA')),
-  ativo boolean not null default true,
-  unique (nome, categoria)
-);
-
-create table public.ocorrencias (
-  id bigint generated always as identity primary key,
-  data_fato date not null,
-  turma text not null check (length(trim(turma)) between 1 and 40),
-  aluno text not null check (length(trim(aluno)) between 1 and 150),
-  tipo_id bigint not null references public.tipos_ocorrencia(id),
-  descricao text not null check (length(trim(descricao)) between 1 and 5000),
-  providencias text not null check (length(trim(providencias)) between 1 and 3000),
-  status text not null default 'ABERTA' check (status in ('ABERTA','EM_ACOMPANHAMENTO','ENCERRADA')),
-  autor_id uuid not null default auth.uid() references public.perfis(id),
-  criado_em timestamptz not null default now(),
-  atualizado_em timestamptz not null default now()
-);
-create index ocorrencias_aluno_idx on public.ocorrencias (lower(aluno));
-create index ocorrencias_data_idx on public.ocorrencias (data_fato);
-create index ocorrencias_autor_idx on public.ocorrencias (autor_id);
-
-create table public.historico_status (
-  id bigint generated always as identity primary key,
-  ocorrencia_id bigint not null references public.ocorrencias(id),
-  status text not null,
-  observacao text,
-  usuario_id uuid not null references public.perfis(id),
-  criado_em timestamptz not null default now()
-);
-create index historico_oc_idx on public.historico_status (ocorrencia_id);
-
-create table public.mensagens (
-  id bigint generated always as identity primary key,
-  ocorrencia_id bigint not null references public.ocorrencias(id),
-  usuario_id uuid not null default auth.uid() references public.perfis(id),
-  texto text not null check (length(trim(texto)) between 1 and 2000),
-  criado_em timestamptz not null default now()
-);
-create index mensagens_oc_idx on public.mensagens (ocorrencia_id);
-
-create table public.notificacoes (
-  id bigint generated always as identity primary key,
-  usuario_id uuid not null references public.perfis(id) on delete cascade,
-  ocorrencia_id bigint references public.ocorrencias(id),
-  texto text not null,
-  lida boolean not null default false,
-  criado_em timestamptz not null default now()
-);
-create index notificacoes_user_idx on public.notificacoes (usuario_id, lida);
-
-create table public.auditoria (
-  id bigint generated always as identity primary key,
-  usuario_id uuid references public.perfis(id) on delete set null,
-  acao text not null,
-  entidade text,
-  entidade_id text,
-  detalhes jsonb,
-  ip text,
-  criado_em timestamptz not null default now()
-);
-create index auditoria_data_idx on public.auditoria (criado_em desc);
-
--- Tipos iniciais (a Direção ajusta na tela Configurações)
-insert into public.tipos_ocorrencia (nome, categoria) values
-  ('Atraso', 'ADMINISTRATIVA'),
-  ('Saída antecipada', 'ADMINISTRATIVA'),
-  ('Uso indevido de celular', 'ADMINISTRATIVA'),
-  ('Dano ao patrimônio', 'ADMINISTRATIVA'),
-  ('Não realização de atividades', 'PEDAGOGICA'),
-  ('Indisciplina em sala de aula', 'PEDAGOGICA'),
-  ('Falta de material', 'PEDAGOGICA'),
-  ('Agressão verbal', 'CONVIVA'),
-  ('Agressão física', 'CONVIVA'),
-  ('Intimidação sistemática (bullying)', 'CONVIVA'),
-  ('Ameaça', 'CONVIVA'),
-  ('Discriminação', 'CONVIVA');
-
--- ---------------------------------------------------------------------
--- Funções de permissão (usadas pelas regras de acesso)
--- ---------------------------------------------------------------------
-
-create or replace function public.meu_perfil() returns text
-language sql stable security definer set search_path = public as $$
-  select perfil from public.perfis where id = auth.uid() and ativo and perfil is not null
-$$;
-
--- Liberado: tem perfil, está ativo e passou pelo duplo fator (quando exigido)
 create or replace function public.acesso_ok() returns boolean
 language sql stable security definer set search_path = public as $$
-  select public.meu_perfil() is not null
-     and (not (select exigir_2fa from public.configuracoes where id = 1)
-          or coalesce(auth.jwt() ->> 'aal', 'aal1') = 'aal2')
-$$;
-
-create or replace function public.e_gestor() returns boolean
-language sql stable security definer set search_path = public as $$
-  select public.acesso_ok() and public.meu_perfil() in ('COORDENACAO','DIRECAO')
+  select public.pode('acesso')
 $$;
 
 create or replace function public.e_direcao() returns boolean
 language sql stable security definer set search_path = public as $$
-  select public.acesso_ok() and public.meu_perfil() = 'DIRECAO'
+  select coalesce((
+    select f.direcao from public.perfis pe join public.funcoes f on f.id = pe.funcao_id
+    where pe.id = auth.uid() and pe.ativo), false)
 $$;
 
--- Quem registra (AOE/professor) vê o que registrou; Coordenação e Direção veem tudo
-create or replace function public.pode_ver(p_autor uuid) returns boolean
+-- A pessoa logada enxerga esta categoria (Administrativa, Pedagógica, Conviva)?
+create or replace function public.ve_categoria(p_categoria text) returns boolean
 language sql stable security definer set search_path = public as $$
-  select public.e_gestor() or (public.acesso_ok() and p_autor = auth.uid())
+  select coalesce((
+    select f.direcao or p_categoria = any (f.categorias)
+    from public.perfis pe join public.funcoes f on f.id = pe.funcao_id
+    where pe.id = auth.uid() and pe.ativo), false)
+$$;
+
+-- Pode ver esta ocorrência? Categoria liberada E (vê todas OU foi quem registrou)
+create or replace function public.pode_ver(p_autor uuid, p_tipo bigint) returns boolean
+language sql stable security definer set search_path = public as $$
+  select public.pode('acesso')
+     and public.ve_categoria((select categoria from public.tipos_ocorrencia where id = p_tipo))
+     and (public.pode('ver_todas') or p_autor = auth.uid())
 $$;
 
 create or replace function public.ip_atual() returns text
@@ -148,23 +139,28 @@ language sql stable as $$
   select split_part(coalesce(nullif(current_setting('request.headers', true), '')::json ->> 'x-forwarded-for', ''), ',', 1)
 $$;
 
--- Uso interno: grava auditoria
 create or replace function public.registrar(p_acao text, p_entidade text, p_id text, p_detalhes jsonb)
 returns void language sql security definer set search_path = public as $$
   insert into public.auditoria (usuario_id, acao, entidade, entidade_id, detalhes, ip)
   values (auth.uid(), p_acao, p_entidade, p_id, p_detalhes, public.ip_atual());
 $$;
 
--- Uso interno: avisa Coordenação, Direção e o autor (menos quem gerou o aviso)
+-- Avisa quem enxerga a ocorrência (vê todas e tem a categoria liberada) e o autor
 create or replace function public.notificar(p_oc bigint, p_texto text, p_exceto uuid)
 returns void language sql security definer set search_path = public as $$
+  with oc as (
+    select o.autor_id, t.categoria
+    from public.ocorrencias o join public.tipos_ocorrencia t on t.id = o.tipo_id
+    where o.id = p_oc
+  )
   insert into public.notificacoes (usuario_id, ocorrencia_id, texto)
-  select p.id, p_oc, p_texto
-  from public.perfis p
-  where p.ativo
-    and p.id is distinct from p_exceto
-    and (p.perfil in ('COORDENACAO','DIRECAO')
-         or p.id = (select autor_id from public.ocorrencias where id = p_oc));
+  select pe.id, p_oc, p_texto
+  from public.perfis pe
+  join public.funcoes f on f.id = pe.funcao_id
+  cross join oc
+  where pe.ativo
+    and pe.id is distinct from p_exceto
+    and (pe.id = oc.autor_id or f.direcao or (f.ver_todas and oc.categoria = any (f.categorias)));
 $$;
 
 revoke execute on function public.registrar(text, text, text, jsonb) from public, anon, authenticated;
@@ -174,7 +170,6 @@ revoke execute on function public.notificar(bigint, text, uuid) from public, ano
 -- Gatilhos
 -- ---------------------------------------------------------------------
 
--- Toda conta criada ganha um perfil "aguardando liberação"
 create or replace function public.novo_usuario() returns trigger
 language plpgsql security definer set search_path = public as $$
 begin
@@ -184,10 +179,29 @@ begin
           new.email);
   return new;
 end $$;
+drop trigger if exists ao_criar_usuario on auth.users;
 create trigger ao_criar_usuario after insert on auth.users
   for each row execute function public.novo_usuario();
 
--- Validação de nova ocorrência
+-- A função Direção é fixa; nenhuma outra pode virar Direção
+create or replace function public.proteger_funcao() returns trigger
+language plpgsql as $$
+begin
+  if tg_op = 'INSERT' then
+    new.direcao := false;
+    return new;
+  end if;
+  if old.direcao then
+    raise exception 'A função Direção é fixa e não pode ser alterada nem excluída.';
+  end if;
+  if tg_op = 'DELETE' then return old; end if;
+  new.direcao := false;
+  return new;
+end $$;
+drop trigger if exists proteger_funcao on public.funcoes;
+create trigger proteger_funcao before insert or update or delete on public.funcoes
+  for each row execute function public.proteger_funcao();
+
 create or replace function public.validar_ocorrencia() returns trigger
 language plpgsql set search_path = public as $$
 begin
@@ -206,6 +220,7 @@ begin
   end if;
   return new;
 end $$;
+drop trigger if exists validar_ocorrencia on public.ocorrencias;
 create trigger validar_ocorrencia before insert on public.ocorrencias
   for each row execute function public.validar_ocorrencia();
 
@@ -223,18 +238,23 @@ begin
     jsonb_build_object('aluno', new.aluno, 'turma', new.turma, 'tipo', v_tipo));
   return null;
 end $$;
+drop trigger if exists apos_ocorrencia on public.ocorrencias;
 create trigger apos_ocorrencia after insert on public.ocorrencias
   for each row execute function public.apos_ocorrencia();
 
--- Mensagens do chat
+-- Chat: fecha quando a ocorrência é encerrada
 create or replace function public.validar_mensagem() returns trigger
-language plpgsql as $$
+language plpgsql set search_path = public as $$
 begin
   new.usuario_id := auth.uid();
   new.texto := trim(new.texto);
   new.criado_em := now();
+  if (select status from public.ocorrencias where id = new.ocorrencia_id) = 'ENCERRADA' then
+    raise exception 'Esta ocorrência está encerrada e a conversa foi fechada. Para conversar de novo, reabra a ocorrência.';
+  end if;
   return new;
 end $$;
+drop trigger if exists validar_mensagem on public.mensagens;
 create trigger validar_mensagem before insert on public.mensagens
   for each row execute function public.validar_mensagem();
 
@@ -249,16 +269,17 @@ begin
   perform public.registrar('MENSAGEM_ENVIADA', 'ocorrencia', new.ocorrencia_id::text, null);
   return null;
 end $$;
+drop trigger if exists apos_mensagem on public.mensagens;
 create trigger apos_mensagem after insert on public.mensagens
   for each row execute function public.apos_mensagem();
 
--- Auditoria de mudanças em usuários, tipos e configurações
 create or replace function public.auditar_perfis() returns trigger
 language plpgsql security definer set search_path = public as $$
 begin
-  if new.perfil is distinct from old.perfil then
-    perform public.registrar('USUARIO_PERFIL', 'usuario', new.id::text,
-      jsonb_build_object('de', old.perfil, 'para', new.perfil));
+  if new.funcao_id is distinct from old.funcao_id then
+    perform public.registrar('USUARIO_FUNCAO', 'usuario', new.id::text,
+      jsonb_build_object('de', (select nome from public.funcoes where id = old.funcao_id),
+                         'para', (select nome from public.funcoes where id = new.funcao_id)));
   end if;
   if new.ativo is distinct from old.ativo then
     perform public.registrar(case when new.ativo then 'USUARIO_ATIVADO' else 'USUARIO_DESATIVADO' end,
@@ -266,19 +287,29 @@ begin
   end if;
   return new;
 end $$;
+drop trigger if exists auditar_perfis on public.perfis;
 create trigger auditar_perfis after update on public.perfis
   for each row execute function public.auditar_perfis();
 
 create or replace function public.auditar_alteracao() returns trigger
 language plpgsql security definer set search_path = public as $$
 begin
+  if tg_op = 'DELETE' then
+    perform public.registrar(tg_argv[0], tg_table_name, old.id::text, to_jsonb(old));
+    return old;
+  end if;
   perform public.registrar(tg_argv[0], tg_table_name, new.id::text, to_jsonb(new));
   return new;
 end $$;
+drop trigger if exists auditar_tipos on public.tipos_ocorrencia;
 create trigger auditar_tipos after insert or update on public.tipos_ocorrencia
   for each row execute function public.auditar_alteracao('TIPO_ALTERADO');
+drop trigger if exists auditar_config on public.configuracoes;
 create trigger auditar_config after update on public.configuracoes
   for each row execute function public.auditar_alteracao('CONFIG_ALTERADA');
+drop trigger if exists auditar_funcoes on public.funcoes;
+create trigger auditar_funcoes after insert or update or delete on public.funcoes
+  for each row execute function public.auditar_alteracao('FUNCAO_ALTERADA');
 
 -- ---------------------------------------------------------------------
 -- Regras de acesso (Row Level Security)
@@ -293,81 +324,110 @@ alter table public.mensagens enable row level security;
 alter table public.notificacoes enable row level security;
 alter table public.auditoria enable row level security;
 
+drop policy if exists "todos leem a configuração" on public.configuracoes;
 create policy "todos leem a configuração" on public.configuracoes
   for select to anon, authenticated using (true);
-create policy "direção altera a configuração" on public.configuracoes
-  for update to authenticated using (public.e_direcao()) with check (public.e_direcao());
+drop policy if exists "alterar a configuração" on public.configuracoes;
+create policy "alterar a configuração" on public.configuracoes
+  for update to authenticated using (public.pode('configuracoes')) with check (public.pode('configuracoes'));
 
+drop policy if exists "ver funções" on public.funcoes;
+create policy "ver funções" on public.funcoes
+  for select to authenticated using (true);
+drop policy if exists "direção cria funções" on public.funcoes;
+create policy "direção cria funções" on public.funcoes
+  for insert to authenticated with check (public.e_direcao());
+drop policy if exists "direção altera funções" on public.funcoes;
+create policy "direção altera funções" on public.funcoes
+  for update to authenticated using (public.e_direcao()) with check (public.e_direcao());
+drop policy if exists "direção exclui funções" on public.funcoes;
+create policy "direção exclui funções" on public.funcoes
+  for delete to authenticated using (public.e_direcao());
+
+drop policy if exists "ver perfis" on public.perfis;
 create policy "ver perfis" on public.perfis
   for select to authenticated using (id = auth.uid() or public.acesso_ok());
+drop policy if exists "direção altera perfis de outras pessoas" on public.perfis;
 create policy "direção altera perfis de outras pessoas" on public.perfis
   for update to authenticated
   using (public.e_direcao() and id <> auth.uid())
   with check (public.e_direcao() and id <> auth.uid());
 
+drop policy if exists "ver tipos" on public.tipos_ocorrencia;
 create policy "ver tipos" on public.tipos_ocorrencia
   for select to authenticated using (public.acesso_ok());
-create policy "direção cria tipos" on public.tipos_ocorrencia
-  for insert to authenticated with check (public.e_direcao());
-create policy "direção altera tipos" on public.tipos_ocorrencia
-  for update to authenticated using (public.e_direcao()) with check (public.e_direcao());
+drop policy if exists "criar tipos" on public.tipos_ocorrencia;
+create policy "criar tipos" on public.tipos_ocorrencia
+  for insert to authenticated with check (public.pode('configuracoes'));
+drop policy if exists "alterar tipos" on public.tipos_ocorrencia;
+create policy "alterar tipos" on public.tipos_ocorrencia
+  for update to authenticated using (public.pode('configuracoes')) with check (public.pode('configuracoes'));
 
--- Ocorrências: ninguém altera nem apaga direto. Acompanhamento só pela função atualizar_ocorrencia.
+drop policy if exists "ver ocorrências" on public.ocorrencias;
 create policy "ver ocorrências" on public.ocorrencias
-  for select to authenticated using (public.pode_ver(autor_id));
+  for select to authenticated using (public.pode_ver(autor_id, tipo_id));
+drop policy if exists "registrar ocorrências" on public.ocorrencias;
 create policy "registrar ocorrências" on public.ocorrencias
-  for insert to authenticated with check (public.acesso_ok() and autor_id = auth.uid());
+  for insert to authenticated
+  with check (public.pode('registrar') and autor_id = auth.uid()
+              and public.ve_categoria((select categoria from public.tipos_ocorrencia where id = tipo_id)));
 
+drop policy if exists "ver histórico" on public.historico_status;
 create policy "ver histórico" on public.historico_status
   for select to authenticated
   using (exists (select 1 from public.ocorrencias o where o.id = ocorrencia_id));
 
+drop policy if exists "ver mensagens" on public.mensagens;
 create policy "ver mensagens" on public.mensagens
   for select to authenticated
-  using (exists (select 1 from public.ocorrencias o where o.id = ocorrencia_id));
+  using (public.pode('conversar') and exists (select 1 from public.ocorrencias o where o.id = ocorrencia_id));
+drop policy if exists "enviar mensagens" on public.mensagens;
 create policy "enviar mensagens" on public.mensagens
   for insert to authenticated
-  with check (usuario_id = auth.uid() and exists (select 1 from public.ocorrencias o where o.id = ocorrencia_id));
+  with check (public.pode('conversar') and usuario_id = auth.uid()
+              and exists (select 1 from public.ocorrencias o where o.id = ocorrencia_id and o.status <> 'ENCERRADA'));
 
+drop policy if exists "ver os próprios avisos" on public.notificacoes;
 create policy "ver os próprios avisos" on public.notificacoes
   for select to authenticated using (usuario_id = auth.uid());
+drop policy if exists "marcar os próprios avisos" on public.notificacoes;
 create policy "marcar os próprios avisos" on public.notificacoes
   for update to authenticated using (usuario_id = auth.uid()) with check (usuario_id = auth.uid());
 
-create policy "direção vê a auditoria" on public.auditoria
-  for select to authenticated using (public.e_direcao());
+drop policy if exists "ver a auditoria" on public.auditoria;
+create policy "ver a auditoria" on public.auditoria
+  for select to authenticated using (public.pode('auditoria'));
 
--- Visão com nomes do tipo e do autor (respeita as regras acima)
+-- Visão com nomes do tipo, do autor e da função dele (respeita as regras acima)
+drop view if exists public.v_ocorrencias;
 create view public.v_ocorrencias with (security_invoker = on) as
-  select o.*, t.nome as tipo_nome, t.categoria, p.nome as autor_nome, p.perfil as autor_perfil
+  select o.*, t.nome as tipo_nome, t.categoria, p.nome as autor_nome, f.nome as autor_funcao
   from public.ocorrencias o
   join public.tipos_ocorrencia t on t.id = o.tipo_id
-  join public.perfis p on p.id = o.autor_id;
+  join public.perfis p on p.id = o.autor_id
+  left join public.funcoes f on f.id = p.funcao_id;
 
 -- ---------------------------------------------------------------------
 -- Funções chamadas pelo site
 -- ---------------------------------------------------------------------
 
--- Ações que o próprio site registra na auditoria
 create or replace function public.auditar(p_acao text, p_entidade text default null, p_id text default null)
 returns void language plpgsql security definer set search_path = public as $$
 begin
   if auth.uid() is null then raise exception 'Entre novamente.'; end if;
-  if p_acao not in ('LOGIN','LOGOUT','OCORRENCIA_VISUALIZADA','PDF_OCORRENCIA','PDF_RELATORIO',
-                    'SENHA_ALTERADA','2FA_ATIVADO','2FA_DESATIVADO') then
+  if p_acao not in ('LOGIN','LOGOUT','OCORRENCIA_VISUALIZADA','PDF_OCORRENCIA','PDF_RELATORIO','SAIR_DE_TODOS') then
     raise exception 'Ação inválida.';
   end if;
   perform public.registrar(p_acao, p_entidade, p_id, null);
 end $$;
 
--- Acompanhamento (Coordenação e Direção)
 create or replace function public.atualizar_ocorrencia(p_id bigint, p_status text, p_providencias text, p_observacao text)
 returns void language plpgsql security definer set search_path = public as $$
 declare oc public.ocorrencias; v_prov text; v_obs text; v_nome text;
 begin
-  if not public.e_gestor() then raise exception 'Seu perfil não tem acesso a esta função.'; end if;
+  if not public.pode('acompanhar') then raise exception 'Sua função não tem acesso a esta ação.'; end if;
   select * into oc from public.ocorrencias where id = p_id for update;
-  if not found then raise exception 'Ocorrência não encontrada.'; end if;
+  if not found or not public.pode_ver(oc.autor_id, oc.tipo_id) then raise exception 'Ocorrência não encontrada.'; end if;
   if p_status not in ('ABERTA','EM_ACOMPANHAMENTO','ENCERRADA') then raise exception 'Situação inválida.'; end if;
   v_prov := left(coalesce(nullif(trim(p_providencias), ''), oc.providencias), 3000);
   v_obs := left(nullif(trim(coalesce(p_observacao, '')), ''), 1000);
@@ -387,12 +447,12 @@ begin
     jsonb_build_object('status_antes', oc.status, 'status_depois', p_status, 'providencias_alteradas', v_prov <> oc.providencias));
 end $$;
 
--- Indicadores do painel
+-- Painel: os números consideram só o que a pessoa pode ver
 create or replace function public.painel(p_de date default null, p_ate date default null, p_turma text default null)
 returns jsonb language plpgsql stable set search_path = public as $$
 declare r jsonb;
 begin
-  if not public.e_gestor() then raise exception 'Seu perfil não tem acesso a esta função.'; end if;
+  if not public.pode('painel') then raise exception 'Sua função não tem acesso a esta ação.'; end if;
   with f as (
     select * from public.v_ocorrencias
     where (p_de is null or data_fato >= p_de)
@@ -417,7 +477,6 @@ begin
   return r;
 end $$;
 
--- Sugestões de turmas e estudantes para os campos de preenchimento
 create or replace function public.sugestoes() returns jsonb
 language sql stable set search_path = public as $$
   select jsonb_build_object(
@@ -425,67 +484,38 @@ language sql stable set search_path = public as $$
     'alunos', coalesce((select jsonb_agg(a order by a) from (select distinct aluno as a from public.ocorrencias limit 3000) s), '[]'))
 $$;
 
--- Usuários (Direção)
+-- Usuários (somente Direção)
 create or replace function public.listar_usuarios()
-returns table (id uuid, nome text, email text, perfil text, ativo boolean, trocar_senha boolean, duplo_fator boolean, criado_em timestamptz)
+returns table (id uuid, nome text, email text, funcao_id bigint, funcao_nome text, ativo boolean, criado_em timestamptz)
 language plpgsql stable security definer set search_path = public as $$
 begin
-  if not public.e_direcao() then raise exception 'Seu perfil não tem acesso a esta função.'; end if;
+  if not public.e_direcao() then raise exception 'Somente a Direção gerencia usuários.'; end if;
   return query
-    select p.id, p.nome, p.email, p.perfil, p.ativo, p.trocar_senha,
-           exists (select 1 from auth.mfa_factors f where f.user_id = p.id and f.status = 'verified'),
-           p.criado_em
-    from public.perfis p
-    order by (p.perfil is null) desc, p.ativo desc, p.nome;
+    select p.id, p.nome, p.email, p.funcao_id, f.nome, p.ativo, p.criado_em
+    from public.perfis p left join public.funcoes f on f.id = p.funcao_id
+    order by (p.funcao_id is null) desc, p.ativo desc, p.nome;
 end $$;
 
-create or replace function public.definir_perfil(p_usuario uuid, p_perfil text, p_trocar_senha boolean default false)
+create or replace function public.definir_funcao(p_usuario uuid, p_funcao bigint)
 returns void language plpgsql security definer set search_path = public as $$
 begin
-  if not public.e_direcao() then raise exception 'Seu perfil não tem acesso a esta função.'; end if;
-  if p_usuario = auth.uid() then raise exception 'Peça a outra pessoa da Direção para alterar o seu perfil.'; end if;
-  if p_perfil not in ('AOE','PROFESSOR','COORDENACAO','DIRECAO') then raise exception 'Perfil inválido.'; end if;
-  update public.perfis set perfil = p_perfil, trocar_senha = trocar_senha or p_trocar_senha where id = p_usuario;
+  if not public.e_direcao() then raise exception 'Somente a Direção gerencia usuários.'; end if;
+  if p_usuario = auth.uid() then raise exception 'Peça a outra pessoa da Direção para alterar a sua função.'; end if;
+  if not exists (select 1 from public.funcoes where id = p_funcao) then raise exception 'Função inválida.'; end if;
+  update public.perfis set funcao_id = p_funcao where id = p_usuario;
   if not found then raise exception 'Usuário não encontrado.'; end if;
   update auth.users set email_confirmed_at = coalesce(email_confirmed_at, now()) where id = p_usuario;
 end $$;
 
-create or replace function public.redefinir_senha(p_usuario uuid) returns text
-language plpgsql security definer set search_path = public, extensions as $$
-declare v_senha text;
-begin
-  if not public.e_direcao() then raise exception 'Seu perfil não tem acesso a esta função.'; end if;
-  v_senha := translate(encode(extensions.gen_random_bytes(9), 'base64'), '+/=', 'kmz') || '7';
-  update auth.users set encrypted_password = extensions.crypt(v_senha, extensions.gen_salt('bf')), updated_at = now()
-  where id = p_usuario;
-  if not found then raise exception 'Usuário não encontrado.'; end if;
-  update public.perfis set trocar_senha = true where id = p_usuario;
-  perform public.registrar('USUARIO_SENHA_RESETADA', 'usuario', p_usuario::text, null);
-  return v_senha;
-end $$;
-
-create or replace function public.resetar_2fa(p_usuario uuid) returns void
-language plpgsql security definer set search_path = public as $$
-begin
-  if not public.e_direcao() then raise exception 'Seu perfil não tem acesso a esta função.'; end if;
-  delete from auth.mfa_factors where user_id = p_usuario;
-  perform public.registrar('USUARIO_2FA_RESETADO', 'usuario', p_usuario::text, null);
-end $$;
-
--- A própria pessoa avisa que trocou a senha provisória
-create or replace function public.senha_trocada() returns void
-language plpgsql security definer set search_path = public as $$
-begin
-  update public.perfis set trocar_senha = false where id = auth.uid();
-  perform public.registrar('SENHA_DEFINIDA', 'usuario', auth.uid()::text, null);
-end $$;
-
 revoke execute on function public.listar_usuarios() from anon;
-revoke execute on function public.definir_perfil(uuid, text, boolean) from anon;
-revoke execute on function public.redefinir_senha(uuid) from anon;
-revoke execute on function public.resetar_2fa(uuid) from anon;
+revoke execute on function public.definir_funcao(uuid, bigint) from anon;
 
--- ---------------------------------------------------------------------
--- Tempo real (avisos, chat e atualizações)
--- ---------------------------------------------------------------------
-alter publication supabase_realtime add table public.notificacoes, public.mensagens, public.ocorrencias;
+
+-- 5. Limpeza final
+drop function if exists public.pode_ver(uuid);
+drop function if exists public.e_gestor();
+drop function if exists public.meu_perfil();
+alter table public.perfis drop column if exists perfil;
+
+-- Conferência: todos devem aparecer com a função certa
+select p.nome, p.email, f.nome as funcao from public.perfis p left join public.funcoes f on f.id = p.funcao_id order by f.nome, p.nome;
