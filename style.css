@@ -328,3 +328,12 @@ a.numero:hover { border-color: var(--caneta); }
   .lateral, .topo, .acoes, .chat form, .zona-perigo, .voltar { display: none !important; }
   .app { display: block; }
 }
+
+/* Área restrita e limpeza anual */
+.area-restrita { margin-top: 2.5rem; border: 1px solid var(--linha); border-radius: 12px; padding: .9rem 1.2rem; background: var(--folha); }
+.area-restrita summary { cursor: pointer; font-weight: 700; color: var(--tinta-2); min-height: 32px; display: flex; align-items: center; }
+.area-restrita[open] summary { margin-bottom: .6rem; color: var(--vermelho); }
+.etapa-perigo { border: 2px solid var(--vermelho); }
+.etapa-perigo legend .num { background: var(--vermelho); }
+.resumo-limpeza { font-size: 1.05rem; margin-top: .8rem; }
+.check-grande { display: flex; align-items: center; gap: .6rem; margin-top: 1rem; cursor: pointer; }
