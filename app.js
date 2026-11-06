@@ -16,6 +16,7 @@
     ['ver_todas', 'Ver as ocorrências de todos', 'Sem isto, vê só as que registrou.'],
     ['conversar', 'Participar da conversa das ocorrências', 'Ler e escrever no chat de cada ocorrência.'],
     ['acompanhar', 'Atualizar situação e providências', 'Inclui encerrar e reabrir ocorrências.'],
+    ['excluir', 'Excluir ocorrências', 'Apaga a ocorrência com conversa, linha do tempo e fotos. Pede motivo e fica registrado na Auditoria. Vale só para as ocorrências que a função enxerga.'],
     ['painel', 'Ver o painel de indicadores', 'Os números consideram só o que a função pode ver.'],
     ['relatorios', 'Gerar PDFs e relatórios', ''],
     ['configuracoes', 'Editar dados da escola e tipos de ocorrência', ''],
@@ -671,7 +672,8 @@
         if (ocAtual === id && !$('#d-anexo-status')?.textContent) telaDetalhe(id, true);
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'ocorrencias', filter: `id=eq.${id}` }, () => {
-        if (ocAtual === id) telaDetalhe(id, true);
+        const editando = $('#f-editar') && !$('#f-editar').classList.contains('oculto');
+        if (ocAtual === id && !editando) telaDetalhe(id, true);
       })
       .subscribe();
   }
@@ -681,6 +683,8 @@
     if (!o) throw new Error('Ocorrência não encontrada.');
     const comChat = pode('conversar');
     const encerrada = o.status === 'ENCERRADA';
+    // Mesma regra do banco: Direção sempre; quem registrou ou quem acompanha, se não estiver encerrada
+    const podeEditar = ehDirecao() || (!encerrada && (o.autor_id === eu.id || pode('acompanhar')));
     const [historico, mensagens, totalAluno, anexos] = await Promise.all([
       sb.from('historico_status').select('*, usuario:perfis(nome)').eq('ocorrencia_id', id).order('id').then(ok),
       comChat ? sb.from('mensagens').select(SEL_MSG).eq('ocorrencia_id', id).order('id').then(ok) : Promise.resolve([]),
@@ -722,6 +726,7 @@
       </div>
       <div class="detalhe${comChat ? '' : ' sem-chat'}">
         <section class="folha dados">
+          <div id="ver-dados">
           <dl>
             <dt>Estudante</dt><dd>${esc(o.aluno)}</dd>
             <dt>Turma</dt><dd>${esc(o.turma)}</dd>
@@ -731,6 +736,10 @@
           </dl>
           <h2>Descrição do fato</h2><div class="texto-livre">${esc(o.descricao)}</div>
           <h2>Providências adotadas</h2><div class="texto-livre">${esc(o.providencias)}</div>
+          ${podeEditar ? '<button class="btn sec" type="button" id="b-editar">Editar ocorrência</button>' : ''}
+          ${!podeEditar && encerrada && o.autor_id === eu.id ? '<p class="muted">Ocorrência encerrada: para corrigir algo, peça para reabrirem a ocorrência ou fale com a Direção.</p>' : ''}
+          </div>
+          <form id="f-editar" class="oculto edicao"></form>
           <div class="acoes">
             ${pode('relatorios') ? '<button class="btn sec" type="button" id="b-pdf">Gerar PDF para prontuário</button>' : ''}
             <a class="btn sec" href="#/ocorrencias?${qs({ aluno: o.aluno })}">Histórico do estudante (${totalAluno == null ? '?' : totalAluno})</a>
@@ -770,7 +779,7 @@
         </section>
         ${blocoChat}
       </div>
-      ${ehDirecao() ? `
+      ${pode('excluir') ? `
       <section class="zona-perigo" id="zona-excluir">
         <h3>Excluir ocorrência</h3>
         <p class="muted">Apaga a ocorrência, a conversa, a linha do tempo e os anexos. Não dá para desfazer. Fica registrado na Auditoria quem apagou, quando e por quê.</p>
@@ -809,6 +818,83 @@
     }
 
     $$('a[data-abrir]').forEach((a) => a.addEventListener('click', () => auditar('ANEXO_ABERTO', 'ocorrencia', id)));
+
+    if ($('#b-editar')) {
+      $('#b-editar').addEventListener('click', async () => {
+        const b = $('#b-editar');
+        b.disabled = true;
+        try {
+          const todosTipos = ok(await sb.from('tipos_ocorrencia').select('*').order('nome'));
+          // Tipos ativos, mais o tipo atual (mesmo se desativado depois)
+          const tiposOk = todosTipos.filter((t) => t.ativo || t.id === o.tipo_id);
+          const cats = categoriasVisiveis(true);
+          if (!cats.includes(o.categoria)) cats.push(o.categoria);
+          const f = $('#f-editar');
+          f.innerHTML = `
+            <h2 style="margin-top:0">Editar ocorrência nº ${o.id}</h2>
+            <p class="muted">Corrija o que for preciso. A correção fica registrada na linha do tempo, com o que mudou, quem corrigiu e quando.</p>
+            <div class="grade-3">
+              <div><label class="obrig" for="ed-data">Data do fato</label><input id="ed-data" type="date" name="data_fato" max="${hoje()}" value="${esc(o.data_fato)}" required></div>
+              <div><label class="obrig" for="ed-turma">Turma</label><input id="ed-turma" name="turma" list="dl-turmas" maxlength="40" value="${esc(o.turma)}" required></div>
+              <div><label class="obrig" for="ed-aluno">Estudante</label><input id="ed-aluno" name="aluno" list="dl-alunos" maxlength="150" value="${esc(o.aluno)}" required></div>
+            </div>
+            <div class="grade-2">
+              <div><label class="obrig" for="ed-cat">Categoria</label><select id="ed-cat" required>${cats.map((c) => `<option value="${esc(c)}" ${c === o.categoria ? 'selected' : ''}>${esc(nomeCategoria(c))}</option>`).join('')}</select></div>
+              <div><label class="obrig" for="ed-tipo">Tipo de ocorrência</label><select id="ed-tipo" name="tipo_id" required></select></div>
+            </div>
+            <label class="obrig" for="ed-desc">Descrição do fato</label>
+            <textarea id="ed-desc" name="descricao" maxlength="5000" required>${esc(o.descricao)}</textarea>
+            <label class="obrig" for="ed-prov">Providências adotadas</label>
+            <textarea id="ed-prov" name="providencias" maxlength="3000" required>${esc(o.providencias)}</textarea>
+            <label for="ed-motivo">O que foi corrigido? (opcional)</label>
+            <input id="ed-motivo" name="motivo" maxlength="300" placeholder="Ex.: a série estava errada">
+            <p class="erro" id="ed-erro" role="alert"></p>
+            <div class="acoes"><button class="btn" type="submit">Salvar alterações</button><button class="btn sec" type="button" id="ed-cancelar">Cancelar</button></div>
+            ${await sugestoes()}`;
+          const preencher = () => {
+            const cat = $('#ed-cat').value;
+            const lista = tiposOk.filter((t) => t.categoria === cat);
+            $('#ed-tipo').innerHTML = lista.length
+              ? lista.map((t) => `<option value="${t.id}" ${t.id === o.tipo_id ? 'selected' : ''}>${esc(t.nome)}${t.ativo ? '' : ' (desativado)'}</option>`).join('')
+              : '<option value="">Nenhum tipo nesta categoria</option>';
+            if (cat !== o.categoria && lista.length) $('#ed-tipo').insertAdjacentHTML('afterbegin', '<option value="" selected>Escolha o tipo</option>');
+          };
+          $('#ed-cat').addEventListener('change', preencher);
+          preencher();
+          $('#ver-dados').classList.add('oculto');
+          f.classList.remove('oculto');
+          $('#ed-turma').focus();
+          $('#ed-cancelar').addEventListener('click', () => {
+            f.classList.add('oculto');
+            f.innerHTML = '';
+            $('#ver-dados').classList.remove('oculto');
+            b.disabled = false;
+          });
+          f.onsubmit = async (e) => {
+            e.preventDefault();
+            const d = lerForm(f);
+            const bs = $('button[type=submit]', f);
+            bs.disabled = true;
+            bs.textContent = 'Salvando…';
+            try {
+              ok(await sb.rpc('editar_ocorrencia', {
+                p_id: id, p_data_fato: d.data_fato, p_turma: d.turma, p_aluno: d.aluno, p_tipo_id: Number(d.tipo_id),
+                p_descricao: d.descricao, p_providencias: d.providencias, p_motivo: d.motivo || null,
+              }));
+              toast('Ocorrência corrigida.');
+              telaDetalhe(id, true);
+            } catch (err) {
+              $('#ed-erro').textContent = erroPT(err);
+              bs.disabled = false;
+              bs.textContent = 'Salvar alterações';
+            }
+          };
+        } catch (err) {
+          toast(erroPT(err));
+          b.disabled = false;
+        }
+      });
+    }
 
     if ($('#b-excluir')) {
       $('#b-excluir').addEventListener('click', () => {
@@ -1143,7 +1229,7 @@
         <div class="categorias-check">${CATEGORIAS.map((c) => `
           <label><input type="checkbox" name="cat-${c.id}" ${f0.categorias.includes(c.id) ? 'checked' : ''}> ${esc(c.nome)}${c.ativo ? '' : ' <span class="muted">(desativada)</span>'}</label>`).join('')}
         </div>
-        <p class="muted" style="margin-top:.6rem">Cadastrar pessoas e criar funções é sempre exclusivo da Direção.</p>
+        <p class="muted" style="margin-top:.6rem">Cadastrar pessoas, criar funções e fazer a limpeza anual são sempre exclusivos da Direção.</p>
         <p class="erro" id="fn-erro" role="alert"></p>
         <div class="acoes">
           <button class="btn" type="submit">${emEdicao ? 'Salvar alterações' : 'Criar função'}</button>
@@ -1570,7 +1656,7 @@
 
   /* ================= Auditoria (Direção) ================= */
   const ACOES = ['LOGIN', 'LOGOUT', 'OCORRENCIA_CRIADA', 'OCORRENCIA_VISUALIZADA', 'OCORRENCIA_ATUALIZADA', 'MENSAGEM_ENVIADA',
-    'PDF_OCORRENCIA', 'PDF_RELATORIO', 'SAIR_DE_TODOS', 'ANEXO_ADICIONADO', 'ANEXO_ABERTO', 'ANEXO_REMOVIDO', 'OCORRENCIA_EXCLUIDA', 'LIMPEZA_OCORRENCIAS', 'CATEGORIA_CRIADA', 'CATEGORIA_ALTERADA',
+    'PDF_OCORRENCIA', 'PDF_RELATORIO', 'SAIR_DE_TODOS', 'ANEXO_ADICIONADO', 'ANEXO_ABERTO', 'ANEXO_REMOVIDO', 'OCORRENCIA_EDITADA', 'OCORRENCIA_EXCLUIDA', 'LIMPEZA_OCORRENCIAS', 'CATEGORIA_CRIADA', 'CATEGORIA_ALTERADA',
     'USUARIO_FUNCAO', 'USUARIO_ATIVADO', 'USUARIO_DESATIVADO', 'FUNCAO_ALTERADA',
     'TIPO_ALTERADO', 'CONFIG_ALTERADA'];
 
