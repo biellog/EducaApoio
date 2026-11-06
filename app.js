@@ -438,6 +438,7 @@
         case 'usuarios': return await telaUsuarios();
         case 'funcoes': return await telaFuncoes();
         case 'configuracoes': return await telaConfiguracoes();
+        case 'limpeza-anual': return await telaLimpeza();
         case 'auditoria': return await telaAuditoria(params);
         case 'conta': return await telaConta();
         default: return await telaLista(params);
@@ -1271,7 +1272,13 @@
             <input name="nome" maxlength="80" required placeholder="Novo tipo nesta categoria" aria-label="Novo tipo em ${esc(c.nome)}">
             <button class="btn peq" type="submit">Adicionar tipo</button>
           </form>
-        </section>`).join('')}`;
+        </section>`).join('')}
+      ${ehDirecao() ? `
+      <details class="area-restrita">
+        <summary>Área restrita da Direção</summary>
+        <p class="muted">Ferramentas que apagam dados de forma definitiva. Use só quando for necessário.</p>
+        <a class="btn perigo" href="#/limpeza-anual">Limpeza anual de ocorrências</a>
+      </details>` : ''}`;
 
     $('#f-escola').addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -1353,9 +1360,217 @@
     }));
   }
 
+  /* ================= Limpeza anual (somente Direção) ================= */
+  function baixarArquivo(nome, conteudo, tipo) {
+    const url = URL.createObjectURL(new Blob([conteudo], { type: tipo }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = nome;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  }
+  async function buscarTodas(ate, aoProgresso) {
+    const lista = [];
+    for (let de = 0; ; de += 1000) {
+      const lote = ok(await sb.from('v_ocorrencias').select('*').lte('data_fato', ate)
+        .order('data_fato').order('id').range(de, de + 999));
+      lista.push(...lote);
+      if (aoProgresso) aoProgresso(lista.length);
+      if (lote.length < 1000) break;
+    }
+    return lista;
+  }
+  function planilhaCSV(lista) {
+    const cel = (v) => `"${String(v == null ? '' : v).replace(/"/g, '""').replace(/\r?\n/g, ' ')}"`;
+    const cab = ['Nº', 'Data do fato', 'Turma', 'Estudante', 'Categoria', 'Tipo', 'Situação', 'Descrição do fato',
+      'Providências', 'Registrado por', 'Função', 'Registrado em'];
+    const linhas = lista.map((o) => [o.id, dataBR(o.data_fato), o.turma, o.aluno, o.categoria_nome || nomeCategoria(o.categoria),
+      o.tipo_nome, STATUS[o.status], o.descricao, o.providencias, o.autor_nome, o.autor_funcao || '', dataHora(o.criado_em)].map(cel).join(';'));
+    return '\ufeff' + [cab.map(cel).join(';'), ...linhas].join('\r\n');
+  }
+
+  async function telaLimpeza() {
+    if (!ehDirecao()) throw new Error('Somente a Direção tem acesso a esta área.');
+    const ano = new Date().getFullYear();
+    const sugestao = new Date().getMonth() <= 2 ? `${ano - 1}-12-31` : hoje();
+    let confirmadoEm = 0;
+    let copiaFeita = false;
+    let total = 0;
+
+    conteudo.innerHTML = `
+      <a class="voltar" href="#/configuracoes">&larr; Voltar para Configurações</a>
+      <div class="cabecalho-pagina"><div><h1>Limpeza anual de ocorrências</h1>
+        <p class="muted">Apaga de forma <strong>definitiva</strong> as ocorrências até a data escolhida, com conversas, linha do tempo, fotos e PDFs. Siga os 4 passos.</p></div></div>
+
+      <fieldset class="etapa">
+        <legend><span class="num">1</span> Até que data apagar</legend>
+        <div class="grade-2">
+          <div><label for="lp-ate">Apagar as ocorrências com data do fato até</label><input id="lp-ate" type="date" max="${hoje()}" value="${sugestao}"></div>
+          <div style="align-self:end"><button class="btn sec" type="button" id="lp-contar">Ver quantas serão apagadas</button></div>
+        </div>
+        <p id="lp-resumo" class="resumo-limpeza muted">Escolha a data e clique em "Ver quantas serão apagadas".</p>
+      </fieldset>
+
+      <fieldset class="etapa">
+        <legend><span class="num">2</span> Guarde uma cópia antes</legend>
+        <p>Depois de apagar, não dá para recuperar. Baixe e guarde a cópia num lugar seguro da escola.</p>
+        <div class="acoes" style="margin-top:.3rem">
+          <button class="btn sec" type="button" id="lp-csv">Baixar planilha (abre no Excel)</button>
+          <button class="btn sec" type="button" id="lp-pdf">Baixar relatório em PDF</button>
+        </div>
+        <p class="muted" id="lp-copia-status" style="margin-top:.6rem">O PDF de muitas ocorrências pode demorar alguns minutos. As fotos não entram na planilha: se alguma precisar ser guardada, gere o PDF da ocorrência antes.</p>
+        <label class="check-grande"><input type="checkbox" id="lp-ok-copia"> Já baixei e guardei a cópia</label>
+      </fieldset>
+
+      <fieldset class="etapa">
+        <legend><span class="num">3</span> Confirme que é você</legend>
+        <p>Vamos enviar um código novo para <strong>${esc(eu.email)}</strong>. A confirmação vale 15 minutos.</p>
+        <button class="btn sec" type="button" id="lp-enviar">Enviar código para meu e-mail</button>
+        <div id="lp-codigo-box" class="oculto">
+          <label for="lp-codigo">Código recebido</label>
+          <div class="f-tipo-cat"><input id="lp-codigo" inputmode="numeric" maxlength="10" autocomplete="one-time-code">
+          <button class="btn" type="button" id="lp-verificar">Confirmar código</button></div>
+        </div>
+        <p class="muted" id="lp-codigo-status" style="margin-top:.6rem"></p>
+      </fieldset>
+
+      <fieldset class="etapa etapa-perigo">
+        <legend><span class="num">4</span> Apagar</legend>
+        <label for="lp-palavra">Para confirmar, digite a palavra <strong>APAGAR</strong></label>
+        <input id="lp-palavra" autocomplete="off" style="max-width:320px">
+        <p class="erro" id="lp-erro" role="alert"></p>
+        <button class="btn perigo-cheio grande" type="button" id="lp-apagar" disabled>Apagar ocorrências</button>
+        <p class="muted" id="lp-progresso" style="margin-top:.8rem"></p>
+      </fieldset>`;
+
+    const ate = () => $('#lp-ate').value;
+    const liberar = () => {
+      const ok2 = total > 0 && copiaFeita && $('#lp-ok-copia').checked
+        && Date.now() - confirmadoEm < 15 * 60 * 1000 && $('#lp-palavra').value.trim().toUpperCase() === 'APAGAR';
+      $('#lp-apagar').disabled = !ok2;
+      $('#lp-apagar').textContent = total ? `Apagar ${total} ocorrência(s)` : 'Apagar ocorrências';
+    };
+    const contar = async () => {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(ate())) { $('#lp-resumo').textContent = 'Escolha uma data.'; total = 0; liberar(); return; }
+      const [oc, ax] = await Promise.all([
+        sb.from('ocorrencias').select('id', { count: 'exact', head: true }).lte('data_fato', ate()),
+        sb.from('anexos').select('id, ocorrencias!inner(data_fato)', { count: 'exact', head: true }).lte('ocorrencias.data_fato', ate()),
+      ]);
+      if (oc.error) throw oc.error;
+      total = oc.count || 0;
+      $('#lp-resumo').innerHTML = total
+        ? `Serão apagadas <strong>${total}</strong> ocorrência(s) com data até <strong>${dataBR(ate())}</strong>, com <strong>${ax.count || 0}</strong> foto(s) ou PDF(s).`
+        : `Não há ocorrências com data até ${dataBR(ate())}.`;
+      $('#lp-resumo').classList.toggle('muted', !total);
+      liberar();
+    };
+    $('#lp-contar').addEventListener('click', () => contar().catch((e) => toast(erroPT(e))));
+    $('#lp-ate').addEventListener('change', () => { copiaFeita = false; $('#lp-ok-copia').checked = false; contar().catch((e) => toast(erroPT(e))); });
+
+    $('#lp-csv').addEventListener('click', async () => {
+      const b = $('#lp-csv');
+      b.disabled = true;
+      try {
+        const lista = await buscarTodas(ate(), (n) => { b.textContent = `Preparando… ${n}`; });
+        baixarArquivo(`ocorrencias-ate-${ate()}.csv`, planilhaCSV(lista), 'text/csv;charset=utf-8');
+        copiaFeita = true;
+        $('#lp-copia-status').textContent = `Planilha baixada com ${lista.length} ocorrência(s). Confira se ela abre antes de continuar.`;
+        auditar('PDF_RELATORIO', null, null);
+      } catch (e) { toast(erroPT(e)); }
+      b.disabled = false;
+      b.textContent = 'Baixar planilha (abre no Excel)';
+      liberar();
+    });
+    $('#lp-pdf').addEventListener('click', async () => {
+      const b = $('#lp-pdf');
+      b.disabled = true;
+      try {
+        const lista = await buscarTodas(ate(), (n) => { b.textContent = `Preparando… ${n}`; });
+        b.textContent = 'Montando o PDF…';
+        await new Promise((res) => setTimeout(res, 50));
+        window.EducaApoioPDF.relatorio(lista, `Cópia antes da limpeza anual: ocorrências até ${dataBR(ate())}`, escola, eu.nome);
+        copiaFeita = true;
+        $('#lp-copia-status').textContent = `Relatório em PDF baixado com ${lista.length} ocorrência(s).`;
+        auditar('PDF_RELATORIO', null, null);
+      } catch (e) { toast(erroPT(e)); }
+      b.disabled = false;
+      b.textContent = 'Baixar relatório em PDF';
+      liberar();
+    });
+    $('#lp-ok-copia').addEventListener('change', () => {
+      if ($('#lp-ok-copia').checked && !copiaFeita) {
+        toast('Baixe a planilha ou o PDF antes de marcar.');
+        $('#lp-ok-copia').checked = false;
+      }
+      liberar();
+    });
+
+    $('#lp-enviar').addEventListener('click', async () => {
+      const r = await sb.auth.signInWithOtp({ email: eu.email, options: { shouldCreateUser: false } });
+      if (r.error) { $('#lp-codigo-status').textContent = erroPT(r.error); return; }
+      $('#lp-codigo-box').classList.remove('oculto');
+      $('#lp-codigo-status').textContent = 'Código enviado. Confira seu e-mail (e a caixa de spam).';
+      $('#lp-codigo').focus();
+    });
+    $('#lp-verificar').addEventListener('click', async () => {
+      try {
+        ok(await sb.auth.verifyOtp({ email: eu.email, token: $('#lp-codigo').value.replace(/\s/g, ''), type: 'email' }));
+        confirmadoEm = Date.now();
+        $('#lp-codigo-box').classList.add('oculto');
+        $('#lp-codigo-status').innerHTML = '<strong style="color:var(--verde)">Identidade confirmada.</strong> Você tem 15 minutos para concluir.';
+      } catch (e) { $('#lp-codigo-status').textContent = erroPT(e); }
+      liberar();
+    });
+    $('#lp-palavra').addEventListener('input', liberar);
+
+    $('#lp-apagar').addEventListener('click', async () => {
+      if (!confirm(`ÚLTIMA CONFIRMAÇÃO\n\nApagar definitivamente ${total} ocorrência(s) com data até ${dataBR(ate())}?\n\nIsso não pode ser desfeito.`)) return;
+      const b = $('#lp-apagar');
+      const prog = $('#lp-progresso');
+      b.disabled = true;
+      $('#lp-erro').textContent = '';
+      try {
+        // 1. Fotos e PDFs
+        const caminhos = [];
+        for (let de = 0; ; de += 1000) {
+          const lote = ok(await sb.from('anexos').select('caminho, ocorrencias!inner(data_fato)')
+            .lte('ocorrencias.data_fato', ate()).order('id').range(de, de + 999));
+          caminhos.push(...lote.map((a) => a.caminho));
+          if (lote.length < 1000) break;
+        }
+        for (let i = 0; i < caminhos.length; i += 100) {
+          prog.textContent = `Apagando fotos e PDFs: ${Math.min(i + 100, caminhos.length)} de ${caminhos.length}…`;
+          const rem = await sb.storage.from('anexos').remove(caminhos.slice(i, i + 100));
+          if (rem.error) throw new Error(erroPT(rem.error));
+        }
+        // 2. Ocorrências, em lotes
+        let apagadas = 0;
+        for (;;) {
+          const n = ok(await sb.rpc('limpar_ocorrencias', { p_ate: ate(), p_confirmacao: 'APAGAR', p_limite: 500 }));
+          apagadas += n;
+          prog.textContent = `Apagando ocorrências: ${apagadas} de ${total}…`;
+          if (!n) break;
+        }
+        prog.innerHTML = `<strong style="color:var(--verde)">Pronto: ${apagadas} ocorrência(s) apagada(s).</strong> A limpeza ficou registrada na Auditoria.`;
+        total = 0;
+        $('#lp-palavra').value = '';
+        toast('Limpeza anual concluída.');
+        carregarNotificacoes();
+      } catch (e) {
+        $('#lp-erro').textContent = erroPT(e) + ' O que já foi apagado não volta; você pode clicar de novo para continuar.';
+        b.disabled = false;
+      }
+      liberar();
+    });
+
+    contar().catch((e) => toast(erroPT(e)));
+  }
+
   /* ================= Auditoria (Direção) ================= */
   const ACOES = ['LOGIN', 'LOGOUT', 'OCORRENCIA_CRIADA', 'OCORRENCIA_VISUALIZADA', 'OCORRENCIA_ATUALIZADA', 'MENSAGEM_ENVIADA',
-    'PDF_OCORRENCIA', 'PDF_RELATORIO', 'SAIR_DE_TODOS', 'ANEXO_ADICIONADO', 'ANEXO_ABERTO', 'ANEXO_REMOVIDO', 'OCORRENCIA_EXCLUIDA', 'CATEGORIA_CRIADA', 'CATEGORIA_ALTERADA',
+    'PDF_OCORRENCIA', 'PDF_RELATORIO', 'SAIR_DE_TODOS', 'ANEXO_ADICIONADO', 'ANEXO_ABERTO', 'ANEXO_REMOVIDO', 'OCORRENCIA_EXCLUIDA', 'LIMPEZA_OCORRENCIAS', 'CATEGORIA_CRIADA', 'CATEGORIA_ALTERADA',
     'USUARIO_FUNCAO', 'USUARIO_ATIVADO', 'USUARIO_DESATIVADO', 'FUNCAO_ALTERADA',
     'TIPO_ALTERADO', 'CONFIG_ALTERADA'];
 
