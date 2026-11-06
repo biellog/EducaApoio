@@ -59,7 +59,7 @@ window.EducaApoioPDF = (function () {
     p.texto(`Data do fato: ${dataBR(oc.data_fato)}`);
     p.texto(`Estudante: ${oc.aluno}`, { negrito: true });
     p.texto(`Turma: ${oc.turma}`);
-    p.texto(`Categoria: ${CATEGORIA[oc.categoria]}`);
+    p.texto(`Categoria: ${oc.categoria_nome || CATEGORIA[oc.categoria] || oc.categoria}`);
     p.texto(`Tipo de ocorrência: ${oc.tipo_nome}`);
     p.texto(`Situação: ${STATUS[oc.status]}`);
     p.texto(`Registrado por: ${oc.autor_nome}${oc.autor_funcao ? ` (${oc.autor_funcao})` : ''} em ${dataHora(oc.criado_em)}`);
@@ -133,7 +133,7 @@ window.EducaApoioPDF = (function () {
     lista.forEach((o) => {
       p.precisa(70);
       p.texto(`Nº ${o.id}  ${dataBR(o.data_fato)}  ${o.aluno} (${o.turma})`, { negrito: true });
-      p.texto(`${CATEGORIA[o.categoria]} / ${o.tipo_nome}   Situação: ${STATUS[o.status]}   Registro: ${o.autor_nome}`, { tam: 9 });
+      p.texto(`${o.categoria_nome || CATEGORIA[o.categoria] || o.categoria} / ${o.tipo_nome}   Situação: ${STATUS[o.status]}   Registro: ${o.autor_nome}`, { tam: 9 });
       p.texto(`Fato: ${o.descricao}`, { tam: 9 });
       p.texto(`Providências: ${o.providencias}`, { tam: 9 });
       p.espaco(2);

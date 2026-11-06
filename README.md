@@ -1,4 +1,4 @@
-# SisRoe: Sistema de Registro de Ocorrências Escolares (versão site)
+# EducaApoio: Registro e acompanhamento de ocorrências escolares
 
 Site para registrar e acompanhar ocorrências escolares, hospedado de graça no **GitHub Pages**, com banco de dados, login e tempo real no **Supabase** (plano gratuito). Não precisa instalar nada nos computadores da escola: basta um navegador.
 
@@ -32,6 +32,18 @@ Em **Funções de acesso**, a Direção cria novas funções (por exemplo, "Admi
 
 As regras valem no banco de dados, não só na tela: mesmo que alguém mexa no site, o banco só entrega o que a função permite.
 
+### Categorias de ocorrência
+
+As ocorrências são agrupadas em categorias. O sistema começa com Administrativa, Pedagógica e Conviva. Em **Configurações**, a Direção cria novas categorias (por exemplo "Saúde" ou "Família"), escolhe quais funções enxergam cada uma e cadastra os tipos de ocorrência dentro dela. Categorias podem ser renomeadas e desativadas. Só as novas podem ser excluídas, e apenas quando não têm tipos.
+
+### Excluir ocorrência
+
+Só a Direção pode excluir uma ocorrência, pelo botão no fim da tela da ocorrência. O sistema pede o motivo e uma confirmação final, e apaga junto a conversa, a linha do tempo e os anexos. A exclusão não pode ser desfeita, mas fica registrada na Auditoria com quem apagou, quando, os dados principais da ocorrência e o motivo.
+
+### Anexos: fotos e PDF
+
+Cada ocorrência pode ter fotos e PDFs anexados (por exemplo, a foto de uma carteira quebrada), no registro ou depois, na tela da ocorrência. No celular, dá para tirar a foto na hora. As fotos são reduzidas automaticamente antes do envio, e cada arquivo pode ter até 10 MB. Os arquivos ficam num armazenamento privado: só quem pode ver a ocorrência consegue abri-los, e os links expiram em uma hora. O PDF para prontuário imprime as fotos numa página de anexos. Ocorrências encerradas não recebem novos anexos, e só a Direção pode excluir um anexo. Tudo fica registrado na auditoria.
+
 ### Conversa fechada nas ocorrências encerradas
 
 Quando a ocorrência é encerrada, a conversa da equipe fica só para consulta e ninguém consegue enviar mensagens, nem pelo site nem direto no banco. Quem tem a permissão de acompanhar pode reabrir a ocorrência mudando a situação, e a conversa volta a funcionar.
@@ -54,13 +66,13 @@ O serviço de e-mail que vem com o Supabase só envia para os membros da sua equ
 
 Depois, no Supabase:
 
-1. **Authentication > Emails > SMTP Settings**: ligue **Enable custom SMTP** e preencha remetente (por exemplo `SisRoe <seu.email@...>`), servidor, porta, usuário e senha do provedor. Salve.
+1. **Authentication > Emails > SMTP Settings**: ligue **Enable custom SMTP** e preencha remetente (por exemplo `EducaApoio <seu.email@...>`), servidor, porta, usuário e senha do provedor. Salve.
 2. **Authentication > Emails > Templates > Magic Link**: troque o assunto e o texto pelo modelo abaixo. O `{{ .Token }}` é o que faz chegar um código em vez de um link.
 
-   Assunto: `Seu código de acesso ao SisRoe`
+   Assunto: `Seu código de acesso ao EducaApoio`
 
    ```html
-   <h2>Código de acesso ao SisRoe</h2>
+   <h2>Código de acesso ao EducaApoio</h2>
    <p>Digite este código para entrar:</p>
    <p style="font-size:28px;font-weight:bold;letter-spacing:4px">{{ .Token }}</p>
    <p>Ele vale por 10 minutos. Se não foi você que pediu, ignore este e-mail.</p>
@@ -82,12 +94,12 @@ where email = 'seu.email@exemplo.com';
 
 ### 4. Publicar o site no GitHub
 
-1. Crie uma conta em https://github.com e um repositório novo, por exemplo `sisroe`. No plano gratuito, o GitHub Pages exige repositório **público**. Isso não expõe dados: o código não contém nenhuma informação de estudantes nem senhas.
+1. Crie uma conta em https://github.com e um repositório novo, por exemplo `educaapoio`. No plano gratuito, o GitHub Pages exige repositório **público**. Isso não expõe dados: o código não contém nenhuma informação de estudantes nem senhas.
 2. No repositório, clique em **Add file > Upload files** e envie todos os arquivos desta pasta (incluindo a pasta `supabase` e o arquivo `.nojekyll`).
 3. No Supabase, abra **Project Settings > API Keys** e copie a **Project URL** e a chave **anon** (ou **publishable**). Nunca use a chave **service_role** / **secret**.
 4. No GitHub, abra o arquivo `config.js`, clique no lápis para editar, cole os dois valores e salve com **Commit changes**.
 5. Em **Settings > Pages**, em **Source**, escolha **Deploy from a branch**, branch **main**, pasta **/ (root)**, e salve.
-6. Em um ou dois minutos o site estará em `https://SEU-USUARIO.github.io/sisroe/`.
+6. Em um ou dois minutos o site estará em `https://SEU-USUARIO.github.io/educaapoio/`.
 7. Volte ao Supabase em **Authentication > URL Configuration** e coloque esse endereço em **Site URL**.
 
 ### 5. Primeiro uso
@@ -96,17 +108,31 @@ where email = 'seu.email@exemplo.com';
 2. Em **Configurações**, informe o nome e o endereço da escola (aparecem nos PDFs) e revise os tipos de ocorrência.
 3. Se precisar, crie funções em **Funções de acesso**. Depois, em **Usuários**, cadastre a equipe com nome, e-mail e função. A pessoa já pode entrar: basta digitar o e-mail no site e usar o código recebido. Depois de cadastrar todos, desligue **Allow new users to sign up** em Authentication > Sign In / Providers > Email; ligue de novo só quando precisar cadastrar alguém.
 
-## Já tinha o SisRoe instalado?
+## Já tinha o EducaApoio instalado?
 
 Rode **uma vez** o arquivo `supabase/migracao-funcoes.sql` no SQL Editor. Ele serve para qualquer versão anterior (com autenticador ou já com código no e-mail): transforma os perfis antigos em funções, fecha o chat das ocorrências encerradas e mantém ocorrências, conversas, usuários e auditoria. No fim, ele mostra a lista de pessoas com a função de cada uma, para você conferir. Depois, atualize os arquivos do site no GitHub (sem trocar o seu `config.js`). Se vier da versão com autenticador, faça também a configuração de e-mail do passo 2.
+
+## Atualizações do banco
+
+Se o seu banco foi criado antes destas funções, rode **uma vez cada**, nesta ordem, os arquivos que ainda não rodou:
+
+1. `supabase/migracao-funcoes.sql`: funções de acesso e chat fechado.
+2. `supabase/migracao-anexos.sql`: fotos e PDF.
+3. `supabase/migracao-exclusao-categorias.sql`: categorias configuráveis e exclusão de ocorrências.
+
+Em instalações novas, o `schema.sql` já inclui tudo.
+
+## Ativar os anexos (fotos e PDF)
+
+Se o seu banco foi criado antes dos anexos, rode **uma vez** o arquivo `supabase/migracao-anexos.sql` no SQL Editor. Em instalações novas, o `schema.sql` já inclui os anexos.
 
 ## Atualizar o site
 
 Qualquer arquivo editado no GitHub é publicado de novo automaticamente em cerca de um minuto. Se preferir usar o Git:
 
 ```bash
-git clone https://github.com/SEU-USUARIO/sisroe.git
-cd sisroe
+git clone https://github.com/SEU-USUARIO/educaapoio.git
+cd educaapoio
 # edite os arquivos
 git add . && git commit -m "Ajuste" && git push
 ```
@@ -115,7 +141,7 @@ git add . && git commit -m "Ajuste" && git push
 
 - **Pausa por inatividade:** o Supabase pausa projetos gratuitos que ficam cerca de uma semana sem acesso (por exemplo, nas férias). Para reativar, entre no painel do Supabase e clique em **Restore project**. Os dados não são perdidos.
 - **Backup:** o plano gratuito não oferece cópias de segurança para baixar. Faça uma exportação periódica em **Database > Backups** (quando disponível) ou exporte as tabelas em CSV pelo **Table Editor**. Uma alternativa completa é o comando `pg_dump` com a string de conexão de **Project Settings > Database**.
-- **Capacidade:** 500 MB de banco, suficiente para muitos anos de ocorrências de uma escola.
+- **Capacidade:** 500 MB de banco, suficiente para muitos anos de ocorrências de uma escola, e 1 GB para anexos. Como as fotos são reduzidas (cerca de 300 KB cada), cabem alguns milhares. O uso aparece em Supabase > Storage.
 
 ## Proteção de dados (LGPD)
 
@@ -137,7 +163,9 @@ pdf.js                geração dos PDFs
 style.css             visual
 config.js             endereço e chave pública do Supabase (preencher)
 supabase/schema.sql   banco: tabelas, regras de acesso, funções e tempo real
-supabase/migracao-funcoes.sql   só para quem já tinha o SisRoe instalado
+supabase/migracao-funcoes.sql   só para quem já tinha o EducaApoio instalado
+supabase/migracao-anexos.sql    ativa os anexos em bancos já existentes
+supabase/migracao-exclusao-categorias.sql   categorias configuráveis e exclusão
 ```
 
 ## Problemas comuns

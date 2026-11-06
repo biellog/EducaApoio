@@ -7,7 +7,10 @@
   const conteudo = $('#conteudo');
 
   const STATUS = { ABERTA: 'Aberta', EM_ACOMPANHAMENTO: 'Em acompanhamento', ENCERRADA: 'Encerrada' };
-  const CATEGORIA = { ADMINISTRATIVA: 'Administrativa', PEDAGOGICA: 'Pedagógica', CONVIVA: 'Conviva (média gravidade)' };
+  // Categorias: carregadas do banco ao entrar (estas são só o padrão inicial)
+  let CATEGORIA = { ADMINISTRATIVA: 'Administrativa', PEDAGOGICA: 'Pedagógica', CONVIVA: 'Conviva (média gravidade)' };
+  let CATEGORIAS = Object.entries(CATEGORIA).map(([id, nome]) => ({ id, nome, ativo: true, descricao: '' }));
+  const nomeCategoria = (id) => CATEGORIA[id] || id || '';
   const PERMISSOES = [
     ['registrar', 'Registrar ocorrências', ''],
     ['ver_todas', 'Ver as ocorrências de todos', 'Sem isto, vê só as que registrou.'],
@@ -182,9 +185,16 @@
   // Permissões da função de quem está logado (a Direção pode tudo). O banco confere de novo.
   const ehDirecao = () => !!(eu && eu.funcao && eu.funcao.direcao);
   const pode = (perm) => ehDirecao() || !!(eu && eu.funcao && eu.funcao[perm]);
-  const categoriasVisiveis = () =>
-    Object.keys(CATEGORIA).filter((c) => ehDirecao() || (eu.funcao.categorias || []).includes(c));
-  const CATEGORIA_VISIVEL = () => Object.fromEntries(categoriasVisiveis().map((c) => [c, CATEGORIA[c]]));
+  const categoriasVisiveis = (soAtivas) =>
+    CATEGORIAS.filter((c) => (!soAtivas || c.ativo) && (ehDirecao() || (eu.funcao.categorias || []).includes(c.id))).map((c) => c.id);
+  const CATEGORIA_VISIVEL = (soAtivas) => Object.fromEntries(categoriasVisiveis(soAtivas).map((c) => [c, CATEGORIA[c]]));
+  async function carregarCategorias() {
+    const r = await sb.from('categorias').select('*').order('criado_em').order('id');
+    if (!r.error && r.data && r.data.length) {
+      CATEGORIAS = r.data;
+      CATEGORIA = Object.fromEntries(r.data.map((c) => [c.id, c.nome]));
+    }
+  }
   const auditar = (acao, entidade, id) =>
     sb.rpc('auditar', { p_acao: acao, p_entidade: entidade || null, p_id: id != null ? String(id) : null }).then(() => {});
 
@@ -213,6 +223,7 @@
     const meu = ok(await sb.from('perfis').select('*, funcao:funcoes(*)').eq('id', session.user.id).maybeSingle());
     if (!meu || !meu.funcao || !meu.ativo) return mostrarEtapa('aguardando');
     eu = meu;
+    await carregarCategorias();
     if (veioDoLogin) { auditar('LOGIN', 'usuario', eu.id); veioDoLogin = false; }
     iniciarApp();
   }
@@ -294,12 +305,13 @@
     carregarNotificacoes();
     conectarAvisos();
     window.addEventListener('hashchange', rotear);
-    if (!location.hash) location.hash = pode('painel') ? '#/painel' : '#/ocorrencias';
+    if (!location.hash) location.hash = '#/inicio';
     else rotear();
   }
 
   function montarMenu() {
     const itens = [
+      ['#/inicio', 'Início', true],
       ['#/ocorrencias', pode('ver_todas') ? 'Ocorrências' : 'Minhas ocorrências', true],
       ['#/nova', 'Registrar ocorrência', pode('registrar')],
       ['#/painel', 'Painel', pode('painel')],
@@ -377,6 +389,7 @@
     conteudo.innerHTML = '<p class="muted">Carregando…</p>';
     try {
       switch (partes[0]) {
+        case 'inicio': return await telaInicio();
         case 'nova': return await telaNova();
         case 'ocorrencia': return await telaDetalhe(Number(partes[1]));
         case 'painel': return await telaPainel(params);
@@ -408,7 +421,7 @@
     if (p.aluno) q = q.ilike('aluno', exato(p.aluno));
     if (p.turma) q = q.ilike('turma', exato(p.turma));
     if (STATUS[p.status]) q = q.eq('status', p.status);
-    if (CATEGORIA[p.categoria]) q = q.eq('categoria', p.categoria);
+    if (p.categoria && CATEGORIA[p.categoria]) q = q.eq('categoria', p.categoria);
     if (/^\d{4}-\d{2}-\d{2}$/.test(p.de || '')) q = q.gte('data_fato', p.de);
     if (/^\d{4}-\d{2}-\d{2}$/.test(p.ate || '')) q = q.lte('data_fato', p.ate);
     return q;
@@ -473,40 +486,92 @@
   }
 
   /* ================= Nova ocorrência ================= */
+  /* ================= Início ================= */
+  async function telaInicio() {
+    const contar = (status) => {
+      let q = sb.from('v_ocorrencias').select('id', { count: 'exact', head: true }).eq('status', status);
+      if (!pode('ver_todas')) q = q.eq('autor_id', eu.id);
+      return q.then((r) => r.count || 0);
+    };
+    const [abertas, acomp] = await Promise.all([contar('ABERTA'), contar('EM_ACOMPANHAMENTO')]);
+    const primeiroNome = String(eu.nome || '').split(' ')[0];
+    const hora = new Date().getHours();
+    const saudacao = hora < 12 ? 'Bom dia' : hora < 18 ? 'Boa tarde' : 'Boa noite';
+    const atalho = (href, titulo, texto, destaque) =>
+      `<a class="atalho${destaque ? ' destaque' : ''}" href="${href}"><strong>${esc(titulo)}</strong><span>${esc(texto)}</span></a>`;
+    conteudo.innerHTML = `
+      <div class="cabecalho-pagina"><div><h1>${saudacao}, ${esc(primeiroNome)}!</h1>
+        <p class="muted">O que você quer fazer agora?</p></div></div>
+      <div class="atalhos">
+        ${pode('registrar') ? atalho('#/nova', 'Registrar ocorrência', 'Anotar um fato novo, com fotos se precisar.', true) : ''}
+        ${atalho('#/ocorrencias', pode('ver_todas') ? 'Ver ocorrências' : 'Minhas ocorrências', 'Procurar pelo nome do estudante ou pela turma.')}
+        ${pode('painel') ? atalho('#/painel', 'Painel', 'Números por mês, turma e tipo.') : ''}
+        ${pode('relatorios') ? atalho('#/relatorios', 'Relatórios', 'Gerar PDF para imprimir ou enviar.') : ''}
+      </div>
+      <div class="numeros numeros-2">
+        <a class="numero" href="#/ocorrencias?status=ABERTA"><b style="color:var(--vermelho)">${abertas}</b><span>abertas${pode('ver_todas') ? '' : ' (suas)'}</span></a>
+        <a class="numero" href="#/ocorrencias?status=EM_ACOMPANHAMENTO"><b style="color:var(--ambar)">${acomp}</b><span>em acompanhamento${pode('ver_todas') ? '' : ' (suas)'}</span></a>
+      </div>
+      <p class="muted">Dica: clique em <strong>Avisos</strong>, no alto da tela, para ver as novidades das ocorrências.</p>`;
+  }
+
+  /* ================= Nova ocorrência ================= */
   async function telaNova() {
     if (!pode('registrar')) throw new Error('Sua função não permite registrar ocorrências.');
     tipos = ok(await sb.from('tipos_ocorrencia').select('*').eq('ativo', true).order('nome'));
+    const cats = CATEGORIA_VISIVEL(true);
     conteudo.innerHTML = `
+      <a class="voltar" href="#/inicio">&larr; Voltar</a>
       <div class="cabecalho-pagina"><div><h1>Registrar ocorrência</h1>
-      <p class="muted">Campos com * são obrigatórios. Ao salvar, Coordenação e Direção recebem o aviso na hora.</p></div></div>
+      <p class="muted">Preencha as 4 partes. Os campos com <span class="obrig-ex">*</span> são obrigatórios.</p></div></div>
       ${await sugestoes()}
-      <form class="folha" id="f-nova">
-        <div class="grade-3">
-          <div><label class="obrig" for="n-data">Data do fato</label><input id="n-data" type="date" name="data_fato" max="${hoje()}" value="${hoje()}" required></div>
-          <div><label class="obrig" for="n-turma">Turma</label><input id="n-turma" name="turma" list="dl-turmas" maxlength="40" placeholder="Ex.: 7º A" required></div>
-          <div><label class="obrig" for="n-aluno">Estudante</label><input id="n-aluno" name="aluno" list="dl-alunos" maxlength="150" placeholder="Nome completo" required></div>
-        </div>
-        <div class="grade-3">
-          <div><label class="obrig" for="n-cat">Categoria</label><select id="n-cat" required>${opcoes(CATEGORIA_VISIVEL(), '', 'Selecione')}</select></div>
-          <div><label class="obrig" for="n-tipo">Tipo de ocorrência</label><select id="n-tipo" name="tipo_id" required><option value="">Escolha a categoria</option></select></div>
-          <div><label for="n-status">Situação</label><select id="n-status" name="status">${opcoes(STATUS, 'ABERTA')}</select></div>
-        </div>
-        <label class="obrig" for="n-desc">Descrição do fato</label>
-        <textarea id="n-desc" name="descricao" maxlength="5000" required placeholder="O que aconteceu, onde, quem estava presente. Descreva fatos, sem julgamentos."></textarea>
-        <label class="obrig" for="n-prov">Providências adotadas</label>
-        <textarea id="n-prov" name="providencias" maxlength="3000" required placeholder="Ex.: conversa com o estudante, contato com responsável, encaminhamento à Coordenação."></textarea>
-        <label for="n-anexos">Fotos ou PDF (opcional)</label>
-        <input id="n-anexos" type="file" accept="${ACEITA_ANEXO}" multiple>
-        <p class="muted">Ex.: foto da carteira quebrada ou documento recebido. No celular, dá para tirar a foto na hora. Até 10 MB por arquivo.</p>
-        <ul class="lista-arquivos" id="n-lista"></ul>
+      <form id="f-nova">
+        <fieldset class="etapa">
+          <legend><span class="num">1</span> Quem e quando</legend>
+          <div class="grade-3">
+            <div><label class="obrig" for="n-data">Data do fato</label><input id="n-data" type="date" name="data_fato" max="${hoje()}" value="${hoje()}" required></div>
+            <div><label class="obrig" for="n-turma">Turma</label><input id="n-turma" name="turma" list="dl-turmas" maxlength="40" placeholder="Ex.: 7º A" required></div>
+            <div><label class="obrig" for="n-aluno">Estudante</label><input id="n-aluno" name="aluno" list="dl-alunos" maxlength="150" placeholder="Nome completo" required></div>
+          </div>
+        </fieldset>
+        <fieldset class="etapa">
+          <legend><span class="num">2</span> O que aconteceu</legend>
+          <div class="grade-2">
+            <div><label class="obrig" for="n-cat">Categoria</label><select id="n-cat" required>${opcoes(cats, Object.keys(cats).length === 1 ? Object.keys(cats)[0] : '', Object.keys(cats).length === 1 ? null : 'Escolha a categoria')}</select></div>
+            <div><label class="obrig" for="n-tipo">Tipo de ocorrência</label><select id="n-tipo" name="tipo_id" required disabled><option value="">Escolha primeiro a categoria</option></select></div>
+          </div>
+          <label class="obrig" for="n-desc">Descrição do fato</label>
+          <textarea id="n-desc" name="descricao" maxlength="5000" required placeholder="O que aconteceu, onde e quem estava presente. Escreva os fatos, sem opiniões."></textarea>
+        </fieldset>
+        <fieldset class="etapa">
+          <legend><span class="num">3</span> O que foi feito</legend>
+          <label class="obrig" for="n-prov">Providências adotadas</label>
+          <textarea id="n-prov" name="providencias" maxlength="3000" required placeholder="Ex.: conversei com o estudante e avisei a Coordenação."></textarea>
+          <label for="n-status">Situação</label>
+          <select id="n-status" name="status" style="max-width:320px">${opcoes(STATUS, 'ABERTA')}</select>
+        </fieldset>
+        <fieldset class="etapa">
+          <legend><span class="num">4</span> Fotos ou PDF <span class="muted">(se tiver)</span></legend>
+          <label class="btn sec" for="n-anexos">Escolher fotos ou PDF</label>
+          <input id="n-anexos" type="file" accept="${ACEITA_ANEXO}" multiple class="oculto">
+          <p class="muted">Ex.: foto da carteira quebrada. No celular, dá para tirar a foto na hora.</p>
+          <ul class="lista-arquivos" id="n-lista"></ul>
+        </fieldset>
         <p class="erro" id="n-erro" role="alert"></p>
-        <div class="acoes"><button class="btn" type="submit">Salvar ocorrência</button><a class="btn sec" href="#/ocorrencias">Cancelar</a></div>
+        <div class="acoes acoes-grandes"><button class="btn grande" type="submit">Salvar ocorrência</button><a class="btn sec grande" href="#/inicio">Cancelar</a></div>
       </form>`;
 
-    $('#n-cat').addEventListener('change', (e) => {
-      const lista = tipos.filter((t) => t.categoria === e.target.value);
-      $('#n-tipo').innerHTML = '<option value="">Selecione</option>' + lista.map((t) => `<option value="${t.id}">${esc(t.nome)}</option>`).join('');
-    });
+    const preencherTipos = () => {
+      const cat = $('#n-cat').value;
+      const lista = tipos.filter((t) => t.categoria === cat);
+      const sel = $('#n-tipo');
+      sel.disabled = !cat;
+      sel.innerHTML = !cat ? '<option value="">Escolha primeiro a categoria</option>'
+        : (lista.length ? '<option value="">Escolha o tipo</option>' + lista.map((t) => `<option value="${t.id}">${esc(t.nome)}</option>`).join('')
+                        : '<option value="">Nenhum tipo cadastrado nesta categoria</option>');
+    };
+    $('#n-cat').addEventListener('change', preencherTipos);
+    preencherTipos();
     $('#n-anexos').addEventListener('change', (e) => {
       $('#n-lista').innerHTML = Array.from(e.target.files).map((f) => `<li>${esc(f.name)} <span class="muted">(${tamanhoTexto(f.size)})</span></li>`).join('');
     });
@@ -514,6 +579,7 @@
       e.preventDefault();
       const botao = $('button[type=submit]', e.target);
       botao.disabled = true;
+      botao.textContent = 'Salvando…';
       try {
         const d = lerForm(e.target);
         const arquivos = Array.from($('#n-anexos').files);
@@ -530,6 +596,7 @@
       } catch (err) {
         $('#n-erro').textContent = erroPT(err);
         botao.disabled = false;
+        botao.textContent = 'Salvar ocorrência';
       }
     });
   }
@@ -606,6 +673,7 @@
         </section>`;
 
     conteudo.innerHTML = `
+      <a class="voltar" href="#/ocorrencias">&larr; Voltar para a lista</a>
       <div class="cabecalho-pagina">
         <div><h1>Ocorrência nº ${o.id}</h1><p class="muted">Registrada por ${esc(o.autor_nome)}${o.autor_funcao ? ` (${esc(o.autor_funcao)})` : ''} em ${dataHora(o.criado_em)}</p></div>
         <div>${carimbo(o.status, true)}</div>
@@ -616,7 +684,7 @@
             <dt>Estudante</dt><dd>${esc(o.aluno)}</dd>
             <dt>Turma</dt><dd>${esc(o.turma)}</dd>
             <dt>Data do fato</dt><dd>${dataBR(o.data_fato)}</dd>
-            <dt>Categoria</dt><dd>${esc(CATEGORIA[o.categoria])}</dd>
+            <dt>Categoria</dt><dd>${esc(o.categoria_nome || nomeCategoria(o.categoria))}</dd>
             <dt>Tipo</dt><dd>${esc(o.tipo_nome)}</dd>
           </dl>
           <h2>Descrição do fato</h2><div class="texto-livre">${esc(o.descricao)}</div>
@@ -659,7 +727,22 @@
           </ul>
         </section>
         ${blocoChat}
-      </div>`;
+      </div>
+      ${ehDirecao() ? `
+      <section class="zona-perigo" id="zona-excluir">
+        <h3>Excluir ocorrência</h3>
+        <p class="muted">Apaga a ocorrência, a conversa, a linha do tempo e os anexos. Não dá para desfazer. Fica registrado na Auditoria quem apagou, quando e por quê.</p>
+        <button class="btn perigo" type="button" id="b-excluir">Excluir esta ocorrência</button>
+        <div id="confirmar-exclusao" class="oculto">
+          <label class="obrig" for="ex-motivo">Por que esta ocorrência vai ser excluída?</label>
+          <textarea id="ex-motivo" maxlength="500" placeholder="Ex.: registrada em duplicidade; aluno errado."></textarea>
+          <p class="erro" id="ex-erro" role="alert"></p>
+          <div class="acoes">
+            <button class="btn perigo-cheio" type="button" id="b-confirmar-exclusao">Sim, excluir definitivamente</button>
+            <button class="btn sec" type="button" id="b-cancelar-exclusao">Não, voltar</button>
+          </div>
+        </div>
+      </section>` : ''}`;
 
     if ($('#chat-msgs')) $('#chat-msgs').scrollTop = $('#chat-msgs').scrollHeight;
 
@@ -684,6 +767,43 @@
     }
 
     $$('a[data-abrir]').forEach((a) => a.addEventListener('click', () => auditar('ANEXO_ABERTO', 'ocorrencia', id)));
+
+    if ($('#b-excluir')) {
+      $('#b-excluir').addEventListener('click', () => {
+        $('#confirmar-exclusao').classList.remove('oculto');
+        $('#b-excluir').classList.add('oculto');
+        $('#ex-motivo').focus();
+      });
+      $('#b-cancelar-exclusao').addEventListener('click', () => {
+        $('#confirmar-exclusao').classList.add('oculto');
+        $('#b-excluir').classList.remove('oculto');
+        $('#ex-erro').textContent = '';
+      });
+      $('#b-confirmar-exclusao').addEventListener('click', async () => {
+        const motivo = $('#ex-motivo').value.trim();
+        if (motivo.length < 5) { $('#ex-erro').textContent = 'Escreva o motivo da exclusão.'; return; }
+        if (!confirm(`Última confirmação: excluir a ocorrência nº ${id} de ${o.aluno}?`)) return;
+        const b = $('#b-confirmar-exclusao');
+        b.disabled = true;
+        b.textContent = 'Excluindo…';
+        try {
+          if (anexos.length) {
+            const rem = await sb.storage.from('anexos').remove(anexos.map((a) => a.caminho));
+            if (rem.error) throw new Error(erroPT(rem.error));
+          }
+          ok(await sb.rpc('excluir_ocorrencia', { p_id: id, p_motivo: motivo }));
+          if (canalOc) sb.removeChannel(canalOc);
+          canalOc = null;
+          ocAtual = null;
+          toast(`Ocorrência nº ${id} excluída.`);
+          location.hash = '#/ocorrencias';
+        } catch (err) {
+          $('#ex-erro').textContent = erroPT(err);
+          b.disabled = false;
+          b.textContent = 'Sim, excluir definitivamente';
+        }
+      });
+    }
 
     if ($('#d-anexos')) {
       $('#d-anexos').addEventListener('change', async (e) => {
@@ -782,7 +902,7 @@
       </div>
       <div class="graficos">
         <section class="folha"><h3>Por mês</h3>${barras(d.por_mes, mes)}</section>
-        <section class="folha"><h3>Por categoria</h3>${barras(d.por_categoria, (c) => CATEGORIA[c])}</section>
+        <section class="folha"><h3>Por categoria</h3>${barras(d.por_categoria, (c) => nomeCategoria(c))}</section>
         <section class="folha"><h3>Por tipo</h3>${barras(d.por_tipo, (t) => t)}</section>
         <section class="folha"><h3>Por turma</h3>${barras(d.por_turma, (t) => t)}</section>
       </div>
@@ -849,7 +969,7 @@
         if (f.de || f.ate) partes.push(`Período: ${f.de ? dataBR(f.de) : 'início'} a ${f.ate ? dataBR(f.ate) : 'hoje'}`);
         if (f.turma) partes.push(`Turma: ${f.turma}`);
         if (f.aluno) partes.push(`Estudante: ${f.aluno}`);
-        if (f.categoria) partes.push(`Categoria: ${CATEGORIA[f.categoria]}`);
+        if (f.categoria) partes.push(`Categoria: ${nomeCategoria(f.categoria)}`);
         if (f.status) partes.push(`Situação: ${STATUS[f.status]}`);
         window.EducaApoioPDF.relatorio(lista, partes.length ? partes.join('   ') : 'Todas as ocorrências', escola, eu.nome);
         auditar('PDF_RELATORIO', null, null);
@@ -954,7 +1074,7 @@
     const resumo = (f) => {
       if (f.direcao) return 'Acesso total, inclusive usuários e funções.';
       const itens = PERMISSOES.filter(([k]) => f[k]).map(([, rot]) => rot.toLowerCase());
-      const cats = f.categorias.map((c) => CATEGORIA[c].split(' (')[0]).join(', ');
+      const cats = f.categorias.map((c) => nomeCategoria(c).split(' (')[0]).join(', ');
       return `${itens.length ? itens.join('; ') : 'nenhuma permissão'}. Categorias: ${cats}.`;
     };
     const emEdicao = funcoes.find((f) => f.id === editarId && !f.direcao);
@@ -978,8 +1098,8 @@
               <label for="pm-${k}">${esc(rot)}${ajuda ? `<span class="muted">${esc(ajuda)}</span>` : ''}</label></li>`).join('')}
         </ul>
         <label style="margin-top:1rem">Categorias de ocorrência que esta função enxerga</label>
-        <div class="categorias-check">${Object.entries(CATEGORIA).map(([c, rot]) => `
-          <label><input type="checkbox" name="cat-${c}" ${f0.categorias.includes(c) ? 'checked' : ''}> ${esc(rot)}</label>`).join('')}
+        <div class="categorias-check">${CATEGORIAS.map((c) => `
+          <label><input type="checkbox" name="cat-${c.id}" ${f0.categorias.includes(c.id) ? 'checked' : ''}> ${esc(c.nome)}${c.ativo ? '' : ' <span class="muted">(desativada)</span>'}</label>`).join('')}
         </div>
         <p class="muted" style="margin-top:.6rem">Cadastrar pessoas e criar funções é sempre exclusivo da Direção.</p>
         <p class="erro" id="fn-erro" role="alert"></p>
@@ -1047,7 +1167,13 @@
   /* ================= Configurações ================= */
   async function telaConfiguracoes() {
     if (!pode('configuracoes')) throw new Error('Sua função não tem acesso às configurações.');
-    const lista = ok(await sb.from('tipos_ocorrencia').select('*').order('nome'));
+    await carregarCategorias();
+    const [lista, funcoes] = await Promise.all([
+      sb.from('tipos_ocorrencia').select('*').order('nome').then(ok),
+      ehDirecao() ? sb.from('funcoes').select('id, nome, direcao, ver_todas').order('nome').then(ok) : Promise.resolve([]),
+    ]);
+    const originais = ['ADMINISTRATIVA', 'PEDAGOGICA', 'CONVIVA'];
+
     conteudo.innerHTML = `
       <div class="cabecalho-pagina"><div><h1>Configurações</h1></div></div>
       <form class="folha" id="f-escola">
@@ -1058,26 +1184,53 @@
           <div><label for="c-lim">Destacar estudantes a partir de quantas ocorrências</label><input id="c-lim" name="limite_atencao" type="number" min="1" max="100" value="${escola.limite_atencao}"></div>
         </div>
         <p class="erro" id="c-erro" role="alert"></p>
-        <button class="btn" type="submit">Salvar configurações</button>
+        <button class="btn" type="submit">Salvar dados da escola</button>
       </form>
 
-      <h2>Tipos de ocorrência</h2>
-      <p class="muted">Ajuste a lista à realidade da escola e ao Protocolo Conviva vigente. Tipos desativados somem do formulário, mas os registros antigos continuam.</p>
-      <form class="folha" id="f-tipo">
-        <div class="grade-3">
-          <div><label class="obrig" for="t-nome">Nome</label><input id="t-nome" name="nome" maxlength="80" required></div>
-          <div><label class="obrig" for="t-cat">Categoria</label><select id="t-cat" name="categoria" required>${opcoes(CATEGORIA, '', 'Selecione')}</select></div>
-          <div style="align-self:end"><button class="btn" type="submit">Adicionar tipo</button></div>
+      <div class="cabecalho-pagina" style="margin-top:2rem"><div><h2 style="margin:0">Categorias e tipos de ocorrência</h2>
+        <p class="muted">Cada categoria agrupa tipos de ocorrência. Tipos ou categorias desativados somem do formulário, mas os registros antigos continuam.</p></div>
+        ${ehDirecao() ? '<button class="btn" type="button" id="b-nova-cat">Nova categoria</button>' : ''}
+      </div>
+
+      ${ehDirecao() ? `
+      <form class="folha oculto" id="f-cat">
+        <h3>Nova categoria</h3>
+        <div class="grade-2">
+          <div><label class="obrig" for="cat-nome">Nome da categoria</label><input id="cat-nome" name="nome" maxlength="60" required placeholder="Ex.: Saúde, Família, Transporte escolar"></div>
+          <div><label for="cat-desc">Descrição (opcional)</label><input id="cat-desc" name="descricao" maxlength="200" placeholder="Para que serve esta categoria"></div>
         </div>
-        <p class="erro" id="t-erro" role="alert"></p>
-      </form>
-      ${Object.keys(CATEGORIA).map((c) => `
-        <h2>${esc(CATEGORIA[c])}</h2>
-        <div class="tabela-wrap"><table><tbody>
-          ${lista.filter((t) => t.categoria === c).map((t) => `
-            <tr><td>${esc(t.nome)}${t.ativo ? '' : ' <span class="muted">(desativado)</span>'}</td>
-            <td style="text-align:right"><button class="btn sec peq" data-id="${t.id}" data-ativo="${t.ativo ? 0 : 1}">${t.ativo ? 'Desativar' : 'Reativar'}</button></td></tr>`).join('') || '<tr><td class="muted">Nenhum tipo.</td></tr>'}
-        </tbody></table></div>`).join('')}`;
+        <label>Quais funções vão enxergar esta categoria?</label>
+        <div class="categorias-check">${funcoes.filter((f) => !f.direcao).map((f) => `
+          <label><input type="checkbox" name="fn-${f.id}" ${f.ver_todas ? 'checked' : ''}> ${esc(f.nome)}</label>`).join('')}
+        </div>
+        <p class="muted">A Direção sempre enxerga todas. Depois de criar, cadastre os tipos de ocorrência dentro dela.</p>
+        <p class="erro" id="cat-erro" role="alert"></p>
+        <div class="acoes"><button class="btn" type="submit">Criar categoria</button><button class="btn sec" type="button" id="b-cancelar-cat">Cancelar</button></div>
+      </form>` : ''}
+
+      ${CATEGORIAS.map((c) => `
+        <section class="folha bloco-categoria${c.ativo ? '' : ' inativa'}" data-cat="${esc(c.id)}">
+          <div class="cab-categoria">
+            <div>
+              <h3>${esc(c.nome)}${c.ativo ? '' : ' <span class="muted">(desativada)</span>'}</h3>
+              ${c.descricao ? `<p class="muted">${esc(c.descricao)}</p>` : ''}
+            </div>
+            ${ehDirecao() ? `<div class="acoes-cat">
+              <button class="btn sec peq" type="button" data-renomear="${esc(c.id)}">Renomear</button>
+              <button class="btn sec peq" type="button" data-ativar-cat="${esc(c.id)}" data-valor="${c.ativo ? 0 : 1}">${c.ativo ? 'Desativar' : 'Reativar'}</button>
+              ${originais.includes(c.id) ? '' : `<button class="btn perigo peq" type="button" data-excluir-cat="${esc(c.id)}">Excluir</button>`}
+            </div>` : ''}
+          </div>
+          <ul class="lista-tipos">
+            ${lista.filter((t) => t.categoria === c.id).map((t) => `
+              <li><span>${esc(t.nome)}${t.ativo ? '' : ' <span class="muted">(desativado)</span>'}</span>
+                  <button class="btn sec peq" type="button" data-id="${t.id}" data-ativo="${t.ativo ? 0 : 1}">${t.ativo ? 'Desativar' : 'Reativar'}</button></li>`).join('') || '<li class="muted">Nenhum tipo ainda.</li>'}
+          </ul>
+          <form class="f-tipo-cat" data-cat="${esc(c.id)}">
+            <input name="nome" maxlength="80" required placeholder="Novo tipo nesta categoria" aria-label="Novo tipo em ${esc(c.nome)}">
+            <button class="btn peq" type="submit">Adicionar tipo</button>
+          </form>
+        </section>`).join('')}`;
 
     $('#f-escola').addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -1088,22 +1241,72 @@
           limite_atencao: Number(d.limite_atencao) || 3,
         }).eq('id', 1));
         await carregarEscola();
-        toast('Configurações salvas.');
+        toast('Dados da escola salvos.');
       } catch (err) { $('#c-erro').textContent = erroPT(err); }
     });
-    $('#f-tipo').addEventListener('submit', async (e) => {
+
+    $$('form.f-tipo-cat').forEach((f) => f.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const d = lerForm(e.target);
+      const nome = f.nome.value.trim();
+      if (!nome) return;
       try {
-        ok(await sb.from('tipos_ocorrencia').insert({ nome: d.nome.trim(), categoria: d.categoria }));
+        ok(await sb.from('tipos_ocorrencia').insert({ nome, categoria: f.dataset.cat }));
+        toast('Tipo adicionado.');
         telaConfiguracoes();
       } catch (err) {
-        $('#t-erro').textContent = /duplicate|unique/i.test(err.message) ? 'Já existe um tipo com esse nome nessa categoria.' : erroPT(err);
+        toast(/duplicate|unique/i.test(err.message) ? 'Já existe um tipo com esse nome nessa categoria.' : erroPT(err));
       }
-    });
+    }));
     $$('button[data-id]').forEach((b) => b.addEventListener('click', async () => {
       try {
         ok(await sb.from('tipos_ocorrencia').update({ ativo: b.dataset.ativo === '1' }).eq('id', b.dataset.id));
+        telaConfiguracoes();
+      } catch (err) { toast(erroPT(err)); }
+    }));
+
+    if (!ehDirecao()) return;
+    const fc = $('#f-cat');
+    $('#b-nova-cat').addEventListener('click', () => {
+      fc.classList.remove('oculto');
+      $('#b-nova-cat').classList.add('oculto');
+      $('#cat-nome').focus();
+    });
+    $('#b-cancelar-cat').addEventListener('click', () => telaConfiguracoes());
+    fc.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData(fc);
+      const ids = funcoes.filter((f) => !f.direcao && fd.get('fn-' + f.id) === 'on').map((f) => f.id);
+      try {
+        ok(await sb.rpc('criar_categoria', { p_nome: fd.get('nome').trim(), p_descricao: fd.get('descricao').trim(), p_funcoes: ids }));
+        toast('Categoria criada. Agora cadastre os tipos de ocorrência dela.');
+        telaConfiguracoes();
+      } catch (err) { $('#cat-erro').textContent = erroPT(err); }
+    });
+    $$('button[data-renomear]').forEach((b) => b.addEventListener('click', async () => {
+      const id = b.dataset.renomear;
+      const novo = prompt('Novo nome da categoria:', CATEGORIA[id] || '');
+      if (!novo || !novo.trim() || novo.trim() === CATEGORIA[id]) return;
+      try {
+        ok(await sb.from('categorias').update({ nome: novo.trim() }).eq('id', id));
+        toast('Categoria renomeada.');
+        telaConfiguracoes();
+      } catch (err) { toast(/duplicate|unique/i.test(err.message) ? 'Já existe uma categoria com esse nome.' : erroPT(err)); }
+    }));
+    $$('button[data-ativar-cat]').forEach((b) => b.addEventListener('click', async () => {
+      const id = b.dataset.ativarCat;
+      const ativar = b.dataset.valor === '1';
+      if (!ativar && !confirm(`Desativar a categoria "${CATEGORIA[id]}"? Ela some do formulário de registro, mas as ocorrências antigas continuam.`)) return;
+      try {
+        ok(await sb.from('categorias').update({ ativo: ativar }).eq('id', id));
+        telaConfiguracoes();
+      } catch (err) { toast(erroPT(err)); }
+    }));
+    $$('button[data-excluir-cat]').forEach((b) => b.addEventListener('click', async () => {
+      const id = b.dataset.excluirCat;
+      if (!confirm(`Excluir a categoria "${CATEGORIA[id]}"?`)) return;
+      try {
+        ok(await sb.from('categorias').delete().eq('id', id));
+        toast('Categoria excluída.');
         telaConfiguracoes();
       } catch (err) { toast(erroPT(err)); }
     }));
@@ -1111,7 +1314,7 @@
 
   /* ================= Auditoria (Direção) ================= */
   const ACOES = ['LOGIN', 'LOGOUT', 'OCORRENCIA_CRIADA', 'OCORRENCIA_VISUALIZADA', 'OCORRENCIA_ATUALIZADA', 'MENSAGEM_ENVIADA',
-    'PDF_OCORRENCIA', 'PDF_RELATORIO', 'SAIR_DE_TODOS', 'ANEXO_ADICIONADO', 'ANEXO_ABERTO', 'ANEXO_REMOVIDO',
+    'PDF_OCORRENCIA', 'PDF_RELATORIO', 'SAIR_DE_TODOS', 'ANEXO_ADICIONADO', 'ANEXO_ABERTO', 'ANEXO_REMOVIDO', 'OCORRENCIA_EXCLUIDA', 'CATEGORIA_CRIADA', 'CATEGORIA_ALTERADA',
     'USUARIO_FUNCAO', 'USUARIO_ATIVADO', 'USUARIO_DESATIVADO', 'FUNCAO_ALTERADA',
     'TIPO_ALTERADO', 'CONFIG_ALTERADA'];
 
