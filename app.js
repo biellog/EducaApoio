@@ -203,7 +203,7 @@
     if (r.data) escola = r.data;
     $('#escola-login').textContent = escola.escola_nome;
     $('#escola-app').textContent = escola.escola_nome;
-    document.title = 'EducaApoio | ' + escola.escola_nome;
+    atualizarTitulo();
   }
 
   /* ================= Entrada por código no e-mail ================= */
@@ -333,10 +333,46 @@
   }
   $('#abrir-menu').addEventListener('click', () => $('#lateral').classList.toggle('aberta'));
 
+  /* ================= Som e título dos avisos ================= */
+  const SOM_AVISO = new Audio('som-aviso.mp3');
+  SOM_AVISO.preload = 'auto';
+  SOM_AVISO.volume = 0.8;
+  const CHAVE_SOM = 'educaapoio-som';
+  function somLigado() {
+    try { return localStorage.getItem(CHAVE_SOM) !== 'desligado'; } catch (e) { return true; }
+  }
+  function definirSom(ligado) {
+    try { localStorage.setItem(CHAVE_SOM, ligado ? 'ligado' : 'desligado'); } catch (e) { /* sem armazenamento */ }
+  }
+  function tocarSom(forcar) {
+    if (!forcar && !somLigado()) return;
+    try {
+      SOM_AVISO.currentTime = 0;
+      const t = SOM_AVISO.play();
+      if (t && t.catch) t.catch(() => { /* o navegador só libera o som depois de um clique na página */ });
+    } catch (e) { /* segue sem som */ }
+  }
+  // O navegador só deixa tocar som depois que a pessoa clica na página: no 1º clique, o som é "destravado"
+  function destravarSom() {
+    SOM_AVISO.muted = true;
+    const t = SOM_AVISO.play();
+    const fim = () => { SOM_AVISO.pause(); SOM_AVISO.currentTime = 0; SOM_AVISO.muted = false; };
+    if (t && t.then) t.then(fim, fim); else fim();
+  }
+  document.addEventListener('pointerdown', destravarSom, { once: true });
+  document.addEventListener('keydown', destravarSom, { once: true });
+
+  let avisosNaoLidos = 0;
+  function atualizarTitulo() {
+    document.title = (avisosNaoLidos ? `(${avisosNaoLidos}) ` : '') + 'EducaApoio | ' + escola.escola_nome;
+  }
+
   /* ================= Avisos em tempo real ================= */
   async function carregarNotificacoes() {
     const itens = ok(await sb.from('notificacoes').select('*').order('id', { ascending: false }).limit(30));
     const naoLidas = itens.filter((i) => !i.lida).length;
+    avisosNaoLidos = naoLidas;
+    atualizarTitulo();
     const c = $('#contador');
     c.textContent = naoLidas > 29 ? '30+' : naoLidas;
     c.classList.toggle('oculto', !naoLidas);
@@ -354,6 +390,8 @@
       await carregarNotificacoes();
       await sb.from('notificacoes').update({ lida: true }).eq('usuario_id', eu.id).eq('lida', false);
       $('#contador').classList.add('oculto');
+      avisosNaoLidos = 0;
+      atualizarTitulo();
     }
   });
   document.addEventListener('click', (e) => {
@@ -367,8 +405,11 @@
         const c = $('#contador');
         c.textContent = (parseInt(c.textContent, 10) || 0) + 1;
         c.classList.remove('oculto');
+        avisosNaoLidos += 1;
+        atualizarTitulo();
         if (!(ocAtual === n.ocorrencia_id && /comentou/.test(n.texto))) {
           toast(n.texto, () => { location.hash = '#/ocorrencia/' + n.ocorrencia_id; });
+          tocarSom();
         }
       })
       .subscribe();
@@ -1359,10 +1400,27 @@
           <dt>E-mail de acesso</dt><dd>${esc(eu.email)}</dd>
         </dl></div>
         <p class="muted" style="margin-top:1rem">Você entra digitando este e-mail e o código que chega nele. Proteja a sua caixa de e-mail: quem tiver acesso a ela consegue entrar no EducaApoio.</p>
+        <h2>Som dos avisos</h2>
+        <p class="muted">Toca um som curto quando chega um aviso novo, como uma ocorrência registrada ou um comentário.</p>
+        <div class="acoes" style="margin-top:.4rem">
+          <button class="btn ${somLigado() ? '' : 'sec'}" type="button" id="b-som">${somLigado() ? 'Som ligado' : 'Som desligado'}</button>
+          <button class="btn sec" type="button" id="b-testar-som">Testar som</button>
+        </div>
+        <p class="muted" style="margin-top:.6rem">Não ouviu? Confira o volume do computador e se a aba do navegador não está sem som.</p>
         <h2>Aparelhos conectados</h2>
         <p class="muted">Esqueceu o EducaApoio aberto em outro computador ou perdeu o celular? Encerre o acesso em todos os aparelhos. Para voltar, basta pedir um novo código.</p>
         <button class="btn perigo" type="button" id="b-global">Sair de todos os aparelhos</button>
       </section>`;
+    $('#b-som').addEventListener('click', () => {
+      const ligar = !somLigado();
+      definirSom(ligar);
+      const b = $('#b-som');
+      b.textContent = ligar ? 'Som ligado' : 'Som desligado';
+      b.classList.toggle('sec', !ligar);
+      if (ligar) tocarSom(true);
+      toast(ligar ? 'Som dos avisos ligado.' : 'Som dos avisos desligado.');
+    });
+    $('#b-testar-som').addEventListener('click', () => tocarSom(true));
     $('#b-global').addEventListener('click', async () => {
       if (!confirm('Encerrar o acesso em todos os aparelhos, inclusive neste?')) return;
       try { await auditar('SAIR_DE_TODOS', 'usuario', eu.id); } catch (e) { /* segue */ }
