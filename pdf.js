@@ -1,5 +1,5 @@
 // Geração de PDFs no navegador com jsPDF (fontes padrão aceitam acentuação em português)
-window.SisRoePDF = (function () {
+window.EducaApoioPDF = (function () {
   const STATUS = { ABERTA: 'Aberta', EM_ACOMPANHAMENTO: 'Em acompanhamento', ENCERRADA: 'Encerrada' };
   const CATEGORIA = { ADMINISTRATIVA: 'Administrativa', PEDAGOGICA: 'Pedagógica', CONVIVA: 'Protocolo Conviva (média gravidade)' };
 
@@ -45,7 +45,7 @@ window.SisRoePDF = (function () {
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(8);
         doc.setTextColor('#555555');
-        const rod = `Gerado pelo SisRoe em ${new Date().toLocaleString('pt-BR')} por ${geradoPor}. Página ${i} de ${total}. Documento com dados de estudantes: uso restrito (LGPD).`;
+        const rod = `Gerado pelo EducaApoio em ${new Date().toLocaleString('pt-BR')} por ${geradoPor}. Página ${i} de ${total}. Documento com dados de estudantes: uso restrito (LGPD).`;
         doc.text(doc.splitTextToSize(rod, LARG), L / 2, A - 35, { align: 'center' });
       }
       doc.save(nomeArquivo);
@@ -54,7 +54,7 @@ window.SisRoePDF = (function () {
     return { doc, texto, espaco, linha, precisa, finalizar, getY: () => y, setY: (v) => { y = v; } };
   }
 
-  function ficha(oc, historico, escola, geradoPor) {
+  function ficha(oc, historico, escola, geradoPor, anexos) {
     const p = criar(`Registro de Ocorrência nº ${oc.id}`, escola);
     p.texto(`Data do fato: ${dataBR(oc.data_fato)}`);
     p.texto(`Estudante: ${oc.aluno}`, { negrito: true });
@@ -92,6 +92,30 @@ window.SisRoePDF = (function () {
       d.text(rot, x + 110, y + 12, { align: 'center' });
     });
     p.setY(y + 30);
+
+    // Anexos: lista e fotos, em páginas próprias
+    if (anexos && anexos.length) {
+      d.addPage();
+      p.setY(M);
+      p.texto(`Anexos da ocorrência nº ${oc.id}`, { tam: 12, negrito: true });
+      p.espaco(4);
+      anexos.forEach((a, i) => {
+        const legenda = `${i + 1}. ${a.nome} (anexado por ${a.usuario} em ${dataHora(a.criado_em)})`;
+        if (a.dataUrl && a.w && a.h) {
+          const maxL = LARG, maxA = 330;
+          const esc = Math.min(maxL / a.w, maxA / a.h, 1.5);
+          const w = a.w * esc, h = a.h * esc;
+          p.precisa(h + 40);
+          p.texto(legenda, { tam: 9 });
+          const yi = p.getY();
+          try { d.addImage(a.dataUrl, 'JPEG', M + (LARG - w) / 2, yi, w, h); } catch (e) { /* imagem inválida */ }
+          p.setY(yi + h + 14);
+        } else {
+          p.texto(`${legenda}${a.tipo === 'application/pdf' ? ' - arquivo PDF, consultar no sistema' : ''}`, { tam: 9 });
+          p.espaco(4);
+        }
+      });
+    }
 
     p.finalizar(`ocorrencia-${oc.id}.pdf`, geradoPor);
   }

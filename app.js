@@ -51,6 +51,9 @@
       [/already registered|already been registered/i, 'Esse e-mail já está cadastrado.'],
       [/row-level security/i, 'Sua função não tem acesso a esta ação.'],
       [/rate limit|too many/i, 'Muitas tentativas. Aguarde alguns minutos.'],
+      [/Payload too large|exceeded the maximum allowed size|entity too large/i, 'Arquivo grande demais. O limite é 10 MB.'],
+      [/mime type.*not supported|invalid_mime_type/i, 'Tipo de arquivo não aceito. Envie foto (JPG, PNG) ou PDF.'],
+      [/Bucket not found/i, 'O armazenamento de anexos não foi configurado. Rode o arquivo migracao-anexos.sql no Supabase.'],
       [/Failed to fetch|NetworkError/i, 'Sem conexão com o servidor. Verifique a internet.'],
     ];
     for (const [re, txt] of mapa) if (re.test(m)) return txt;
@@ -77,8 +80,95 @@
     return Array.from(v, (n) => n.toString(16).padStart(2, '0')).join('') + 'Aa1';
   }
 
+  /* ================= Anexos (fotos e PDF) ================= */
+  const TIPOS_ANEXO = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+  const MAX_ANEXO = 10 * 1024 * 1024; // 10 MB
+  const ACEITA_ANEXO = 'image/*,application/pdf';
+  const tamanhoTexto = (b) => (b < 1024 * 1024 ? `${Math.max(1, Math.round(b / 1024))} KB` : `${(b / 1024 / 1024).toFixed(1)} MB`);
+  const ehImagem = (tipo) => /^image\//.test(tipo);
+
+  // Reduz a foto (lado maior até 1600 px, JPEG) para economizar espaço sem perder a leitura
+  function comprimirImagem(arquivo) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(arquivo);
+      const img = new Image();
+      img.onload = () => {
+        const max = 1600;
+        const escala = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+        const c = document.createElement('canvas');
+        c.width = Math.round(img.naturalWidth * escala);
+        c.height = Math.round(img.naturalHeight * escala);
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, c.width, c.height);
+        ctx.drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url);
+        c.toBlob((b) => (b ? resolve(b) : reject(new Error('Não foi possível preparar a foto.'))), 'image/jpeg', 0.82);
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error(`Não foi possível abrir a foto "${arquivo.name}". Tente tirar de novo ou salvar em JPG.`));
+      };
+      img.src = url;
+    });
+  }
+
+  function nomeSeguro(nome) {
+    return String(nome || 'arquivo').replace(/[\\/:*?"<>|]+/g, '_').slice(0, 150);
+  }
+
+  // Envia um arquivo para a ocorrência: guarda o arquivo e depois o registro
+  async function enviarAnexo(ocId, arquivo) {
+    const pdf = arquivo.type === 'application/pdf' || /\.pdf$/i.test(arquivo.name);
+    if (!pdf && !/^image\//.test(arquivo.type)) throw new Error(`"${arquivo.name}" não é foto nem PDF.`);
+    let blob = arquivo;
+    let tipo = 'application/pdf';
+    let nome = nomeSeguro(arquivo.name);
+    if (!pdf) {
+      blob = await comprimirImagem(arquivo);
+      tipo = 'image/jpeg';
+      nome = nome.replace(/\.[^.]+$/, '') + '.jpg';
+    }
+    if (blob.size > MAX_ANEXO) throw new Error(`"${arquivo.name}" passa de 10 MB. Envie um arquivo menor.`);
+    const caminho = `${ocId}/${crypto.randomUUID()}.${pdf ? 'pdf' : 'jpg'}`;
+    const up = await sb.storage.from('anexos').upload(caminho, blob, { contentType: tipo, upsert: false });
+    if (up.error) throw new Error(erroPT(up.error));
+    const ins = await sb.from('anexos').insert({ ocorrencia_id: ocId, caminho, nome, tipo, tamanho: blob.size });
+    if (ins.error) {
+      await sb.storage.from('anexos').remove([caminho]);
+      throw new Error(erroPT(ins.error));
+    }
+  }
+
+  async function enviarVarios(ocId, arquivos, aoProgresso) {
+    const falhas = [];
+    for (let i = 0; i < arquivos.length; i++) {
+      if (aoProgresso) aoProgresso(i + 1, arquivos.length);
+      try { await enviarAnexo(ocId, arquivos[i]); } catch (e) { falhas.push(e.message); }
+    }
+    return falhas;
+  }
+
+  // Lê um arquivo do armazenamento como imagem para o PDF (com medidas)
+  async function imagemParaPdf(url) {
+    const blob = await (await fetch(url)).blob();
+    const dataUrl = await new Promise((ok2, erro) => {
+      const fr = new FileReader();
+      fr.onload = () => ok2(fr.result);
+      fr.onerror = erro;
+      fr.readAsDataURL(blob);
+    });
+    const dim = await new Promise((ok2) => {
+      const im = new Image();
+      im.onload = () => ok2({ w: im.naturalWidth, h: im.naturalHeight });
+      im.onerror = () => ok2(null);
+      im.src = dataUrl;
+    });
+    return dim ? { dataUrl, ...dim } : null;
+  }
+
   /* ================= Supabase ================= */
-  const CFG = window.SISROE_CONFIG || {};
+  const CFG = window.EDUCAAPOIO_CONFIG || window.SISROE_CONFIG || {}; // aceita o config.js antigo
   const configurado = CFG.supabaseUrl && !/SEU-PROJETO/.test(CFG.supabaseUrl) && CFG.supabaseAnonKey && !/COLE-AQUI/.test(CFG.supabaseAnonKey);
   const sb = configurado ? window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseAnonKey) : null;
 
@@ -103,7 +193,7 @@
     if (r.data) escola = r.data;
     $('#escola-login').textContent = escola.escola_nome;
     $('#escola-app').textContent = escola.escola_nome;
-    document.title = 'SisRoe | ' + escola.escola_nome;
+    document.title = 'EducaApoio | ' + escola.escola_nome;
   }
 
   /* ================= Entrada por código no e-mail ================= */
@@ -405,6 +495,10 @@
         <textarea id="n-desc" name="descricao" maxlength="5000" required placeholder="O que aconteceu, onde, quem estava presente. Descreva fatos, sem julgamentos."></textarea>
         <label class="obrig" for="n-prov">Providências adotadas</label>
         <textarea id="n-prov" name="providencias" maxlength="3000" required placeholder="Ex.: conversa com o estudante, contato com responsável, encaminhamento à Coordenação."></textarea>
+        <label for="n-anexos">Fotos ou PDF (opcional)</label>
+        <input id="n-anexos" type="file" accept="${ACEITA_ANEXO}" multiple>
+        <p class="muted">Ex.: foto da carteira quebrada ou documento recebido. No celular, dá para tirar a foto na hora. Até 10 MB por arquivo.</p>
+        <ul class="lista-arquivos" id="n-lista"></ul>
         <p class="erro" id="n-erro" role="alert"></p>
         <div class="acoes"><button class="btn" type="submit">Salvar ocorrência</button><a class="btn sec" href="#/ocorrencias">Cancelar</a></div>
       </form>`;
@@ -413,16 +507,24 @@
       const lista = tipos.filter((t) => t.categoria === e.target.value);
       $('#n-tipo').innerHTML = '<option value="">Selecione</option>' + lista.map((t) => `<option value="${t.id}">${esc(t.nome)}</option>`).join('');
     });
+    $('#n-anexos').addEventListener('change', (e) => {
+      $('#n-lista').innerHTML = Array.from(e.target.files).map((f) => `<li>${esc(f.name)} <span class="muted">(${tamanhoTexto(f.size)})</span></li>`).join('');
+    });
     $('#f-nova').addEventListener('submit', async (e) => {
       e.preventDefault();
       const botao = $('button[type=submit]', e.target);
       botao.disabled = true;
       try {
         const d = lerForm(e.target);
+        const arquivos = Array.from($('#n-anexos').files);
         const r = ok(await sb.from('ocorrencias').insert({
           data_fato: d.data_fato, turma: d.turma, aluno: d.aluno, tipo_id: Number(d.tipo_id),
           descricao: d.descricao, providencias: d.providencias, status: d.status,
         }).select('id').single());
+        if (arquivos.length) {
+          const falhas = await enviarVarios(r.id, arquivos, (i, n) => { botao.textContent = `Enviando anexo ${i} de ${n}…`; });
+          if (falhas.length) alert('A ocorrência foi salva, mas alguns anexos não foram enviados:\n\n' + falhas.join('\n') + '\n\nVocê pode anexá-los de novo na tela da ocorrência.');
+        }
         toast('Ocorrência registrada.');
         location.hash = '#/ocorrencia/' + r.id;
       } catch (err) {
@@ -456,6 +558,9 @@
         const r = await sb.from('mensagens').select(SEL_MSG).eq('id', p.new.id).maybeSingle();
         if (r.data && ocAtual === id) adicionarMensagem(r.data);
       })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'anexos', filter: `ocorrencia_id=eq.${id}` }, () => {
+        if (ocAtual === id && !$('#d-anexo-status')?.textContent) telaDetalhe(id, true);
+      })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'ocorrencias', filter: `id=eq.${id}` }, () => {
         if (ocAtual === id) telaDetalhe(id, true);
       })
@@ -467,11 +572,17 @@
     if (!o) throw new Error('Ocorrência não encontrada.');
     const comChat = pode('conversar');
     const encerrada = o.status === 'ENCERRADA';
-    const [historico, mensagens, totalAluno] = await Promise.all([
+    const [historico, mensagens, totalAluno, anexos] = await Promise.all([
       sb.from('historico_status').select('*, usuario:perfis(nome)').eq('ocorrencia_id', id).order('id').then(ok),
       comChat ? sb.from('mensagens').select(SEL_MSG).eq('ocorrencia_id', id).order('id').then(ok) : Promise.resolve([]),
       sb.from('ocorrencias').select('id', { count: 'exact', head: true }).ilike('aluno', exato(o.aluno)).then((r) => r.count),
+      sb.from('anexos').select('*, usuario:perfis(nome)').eq('ocorrencia_id', id).order('id').then(ok),
     ]);
+    // Links temporários (1 hora) para mostrar os arquivos privados
+    if (anexos.length) {
+      const urls = await sb.storage.from('anexos').createSignedUrls(anexos.map((a) => a.caminho), 3600);
+      (urls.data || []).forEach((u, i) => { if (anexos[i]) anexos[i].url = u.signedUrl; });
+    }
     if (!atualizacao) {
       auditar('OCORRENCIA_VISUALIZADA', 'ocorrencia', id);
       sb.from('notificacoes').update({ lida: true }).eq('usuario_id', eu.id).eq('ocorrencia_id', id).eq('lida', false).then(() => {});
@@ -527,6 +638,21 @@
             <p class="erro" id="a-erro" role="alert"></p>
             <button class="btn" type="submit">Salvar acompanhamento</button>
           </form>` : ''}
+          <h2>Anexos</h2>
+          ${anexos.length ? `<ul class="anexos">${anexos.map((a, i) => `
+            <li>
+              ${a.url ? `<a href="${esc(a.url)}" target="_blank" rel="noopener" data-abrir="${a.id}">` : '<span>'}
+                ${ehImagem(a.tipo) && a.url ? `<img src="${esc(a.url)}" alt="${esc(a.nome)}" loading="lazy">` : '<span class="icone-pdf">PDF</span>'}
+              ${a.url ? '</a>' : '</span>'}
+              <span class="anexo-nome">${esc(a.nome)}</span>
+              <span class="muted">${esc(a.usuario ? a.usuario.nome : '')}, ${dataHora(a.criado_em)}, ${tamanhoTexto(a.tamanho)}</span>
+              ${ehDirecao() ? `<button class="link" type="button" data-remover="${i}">Excluir</button>` : ''}
+            </li>`).join('')}</ul>` : '<p class="muted">Nenhum anexo.</p>'}
+          ${encerrada
+            ? '<p class="muted">Ocorrência encerrada: não recebe mais anexos.</p>'
+            : `<label class="btn sec" for="d-anexos" style="width:auto">Adicionar foto ou PDF</label>
+               <input id="d-anexos" type="file" accept="${ACEITA_ANEXO}" multiple class="oculto">
+               <p class="muted" id="d-anexo-status"></p>`}
           <h2>Linha do tempo</h2>
           <ul class="linha-tempo">${historico.map((h) => `
             <li><strong>${esc(STATUS[h.status])}</strong> ${dataHora(h.criado_em)} por ${esc(h.usuario ? h.usuario.nome : '')}${h.observacao ? `<br><span class="muted">${esc(h.observacao)}</span>` : ''}</li>`).join('')}
@@ -557,10 +683,54 @@
       });
     }
 
+    $$('a[data-abrir]').forEach((a) => a.addEventListener('click', () => auditar('ANEXO_ABERTO', 'ocorrencia', id)));
+
+    if ($('#d-anexos')) {
+      $('#d-anexos').addEventListener('change', async (e) => {
+        const arquivos = Array.from(e.target.files);
+        if (!arquivos.length) return;
+        const status = $('#d-anexo-status');
+        const falhas = await enviarVarios(id, arquivos, (i, n) => { status.textContent = `Enviando ${i} de ${n}…`; });
+        status.textContent = '';
+        if (falhas.length) toast(falhas.join(' '));
+        else toast(arquivos.length > 1 ? 'Anexos enviados.' : 'Anexo enviado.');
+        telaDetalhe(id, true);
+      });
+    }
+
+    $$('button[data-remover]').forEach((b) => b.addEventListener('click', async () => {
+      const a = anexos[Number(b.dataset.remover)];
+      if (!confirm(`Excluir o anexo "${a.nome}"? Não dá para desfazer.`)) return;
+      try {
+        ok(await sb.from('anexos').delete().eq('id', a.id));
+        await sb.storage.from('anexos').remove([a.caminho]);
+        toast('Anexo excluído.');
+        telaDetalhe(id, true);
+      } catch (err) { toast(erroPT(err)); }
+    }));
+
     if ($('#b-pdf')) {
-      $('#b-pdf').addEventListener('click', () => {
-        window.SisRoePDF.ficha(o, historico, escola, eu.nome);
-        auditar('PDF_OCORRENCIA', 'ocorrencia', id);
+      $('#b-pdf').addEventListener('click', async () => {
+        const b = $('#b-pdf');
+        b.disabled = true;
+        b.textContent = 'Gerando PDF…';
+        try {
+          const lista = [];
+          for (const a of anexos) {
+            const item = { nome: a.nome, tipo: a.tipo, usuario: a.usuario ? a.usuario.nome : '', criado_em: a.criado_em };
+            if (ehImagem(a.tipo) && a.url) {
+              try { Object.assign(item, await imagemParaPdf(a.url)); } catch (e2) { /* segue sem a imagem */ }
+            }
+            lista.push(item);
+          }
+          window.EducaApoioPDF.ficha(o, historico, escola, eu.nome, lista);
+          auditar('PDF_OCORRENCIA', 'ocorrencia', id);
+        } catch (err) {
+          toast(erroPT(err));
+        } finally {
+          b.disabled = false;
+          b.textContent = 'Gerar PDF para prontuário';
+        }
       });
     }
     if ($('#f-acomp')) {
@@ -681,7 +851,7 @@
         if (f.aluno) partes.push(`Estudante: ${f.aluno}`);
         if (f.categoria) partes.push(`Categoria: ${CATEGORIA[f.categoria]}`);
         if (f.status) partes.push(`Situação: ${STATUS[f.status]}`);
-        window.SisRoePDF.relatorio(lista, partes.length ? partes.join('   ') : 'Todas as ocorrências', escola, eu.nome);
+        window.EducaApoioPDF.relatorio(lista, partes.length ? partes.join('   ') : 'Todas as ocorrências', escola, eu.nome);
         auditar('PDF_RELATORIO', null, null);
       } catch (err) {
         $('#r-erro').textContent = erroPT(err);
@@ -738,7 +908,7 @@
         const d = lerForm(e.target);
         // Cliente separado: cria a conta sem desconectar a Direção
         const tmp = window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseAnonKey, {
-          auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, storageKey: 'sisroe-cadastro' },
+          auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, storageKey: 'educaapoio-cadastro' },
         });
         const r = ok(await tmp.auth.signUp({ email: d.email.trim(), password: senhaDescartavel(), options: { data: { nome: d.nome.trim() } } }));
         if (!r.user || (r.user.identities && r.user.identities.length === 0)) throw new Error('Esse e-mail já está cadastrado.');
@@ -941,7 +1111,7 @@
 
   /* ================= Auditoria (Direção) ================= */
   const ACOES = ['LOGIN', 'LOGOUT', 'OCORRENCIA_CRIADA', 'OCORRENCIA_VISUALIZADA', 'OCORRENCIA_ATUALIZADA', 'MENSAGEM_ENVIADA',
-    'PDF_OCORRENCIA', 'PDF_RELATORIO', 'SAIR_DE_TODOS',
+    'PDF_OCORRENCIA', 'PDF_RELATORIO', 'SAIR_DE_TODOS', 'ANEXO_ADICIONADO', 'ANEXO_ABERTO', 'ANEXO_REMOVIDO',
     'USUARIO_FUNCAO', 'USUARIO_ATIVADO', 'USUARIO_DESATIVADO', 'FUNCAO_ALTERADA',
     'TIPO_ALTERADO', 'CONFIG_ALTERADA'];
 
@@ -985,9 +1155,9 @@
           <dt>Função</dt><dd>${esc(eu.funcao.nome)}</dd>
           <dt>E-mail de acesso</dt><dd>${esc(eu.email)}</dd>
         </dl></div>
-        <p class="muted" style="margin-top:1rem">Você entra digitando este e-mail e o código que chega nele. Proteja a sua caixa de e-mail: quem tiver acesso a ela consegue entrar no SisRoe.</p>
+        <p class="muted" style="margin-top:1rem">Você entra digitando este e-mail e o código que chega nele. Proteja a sua caixa de e-mail: quem tiver acesso a ela consegue entrar no EducaApoio.</p>
         <h2>Aparelhos conectados</h2>
-        <p class="muted">Esqueceu o SisRoe aberto em outro computador ou perdeu o celular? Encerre o acesso em todos os aparelhos. Para voltar, basta pedir um novo código.</p>
+        <p class="muted">Esqueceu o EducaApoio aberto em outro computador ou perdeu o celular? Encerre o acesso em todos os aparelhos. Para voltar, basta pedir um novo código.</p>
         <button class="btn perigo" type="button" id="b-global">Sair de todos os aparelhos</button>
       </section>`;
     $('#b-global').addEventListener('click', async () => {
