@@ -337,3 +337,10 @@ a.numero:hover { border-color: var(--caneta); }
 .etapa-perigo legend .num { background: var(--vermelho); }
 .resumo-limpeza { font-size: 1.05rem; margin-top: .8rem; }
 .check-grande { display: flex; align-items: center; gap: .6rem; margin-top: 1rem; cursor: pointer; }
+
+/* Edição da ocorrência */
+.edicao { border: 2px solid var(--caneta); border-radius: 12px; padding: 1.2rem 1.3rem; margin: -.4rem -.5rem 0; background: #fbfcff; }
+#b-editar { margin-top: .2rem; }
+
+/* Turmas */
+.acoes-tabela { display: flex; gap: .4rem; flex-wrap: wrap; }

@@ -19,6 +19,7 @@
     ['excluir', 'Excluir ocorrências', 'Apaga a ocorrência com conversa, linha do tempo e fotos. Pede motivo e fica registrado na Auditoria. Vale só para as ocorrências que a função enxerga.'],
     ['painel', 'Ver o painel de indicadores', 'Os números consideram só o que a função pode ver.'],
     ['relatorios', 'Gerar PDFs e relatórios', ''],
+    ['turmas', 'Cadastrar, editar e excluir turmas', 'Só as turmas cadastradas aparecem para escolher ao registrar uma ocorrência.'],
     ['configuracoes', 'Editar dados da escola e tipos de ocorrência', ''],
     ['auditoria', 'Consultar a auditoria', 'Mostra acessos e ações de todas as pessoas.'],
   ];
@@ -317,6 +318,7 @@
       ['#/nova', 'Registrar ocorrência', pode('registrar')],
       ['#/painel', 'Painel', pode('painel')],
       ['#/relatorios', 'Relatórios', pode('relatorios')],
+      ['#/turmas', 'Turmas', pode('turmas')],
       ['#/usuarios', 'Usuários', ehDirecao()],
       ['#/funcoes', 'Funções de acesso', ehDirecao()],
       ['#/configuracoes', 'Configurações', pode('configuracoes')],
@@ -440,6 +442,7 @@
         case 'funcoes': return await telaFuncoes();
         case 'configuracoes': return await telaConfiguracoes();
         case 'limpeza-anual': return await telaLimpeza();
+        case 'turmas': return await telaTurmas();
         case 'auditoria': return await telaAuditoria(params);
         case 'conta': return await telaConta();
         default: return await telaLista(params);
@@ -529,6 +532,19 @@
   }
 
   /* ================= Nova ocorrência ================= */
+  /* ================= Turmas (lista para escolher) ================= */
+  const ordemNatural = (a, b) => a.localeCompare(b, 'pt-BR', { numeric: true, sensitivity: 'base' });
+  async function turmasAtivas() {
+    const r = await sb.from('turmas').select('nome').eq('ativo', true);
+    if (r.error) throw new Error(/turmas/i.test(r.error.message) ? 'O cadastro de turmas ainda não foi ativado. Rode o arquivo migracao-turmas.sql no Supabase.' : erroPT(r.error));
+    return r.data.map((t) => t.nome).sort(ordemNatural);
+  }
+  function opcoesTurma(lista, atual) {
+    const nomes = atual && !lista.includes(atual) ? [atual, ...lista] : lista;
+    return '<option value="">Escolha a turma</option>' +
+      nomes.map((n) => `<option value="${esc(n)}" ${n === atual ? 'selected' : ''}>${esc(n)}${lista.includes(n) ? '' : ' (desativada)'}</option>`).join('');
+  }
+
   /* ================= Início ================= */
   async function telaInicio() {
     const contar = (status) => {
@@ -562,6 +578,7 @@
   async function telaNova() {
     if (!pode('registrar')) throw new Error('Sua função não permite registrar ocorrências.');
     tipos = ok(await sb.from('tipos_ocorrencia').select('*').eq('ativo', true).order('nome'));
+    const turmas = await turmasAtivas();
     const cats = CATEGORIA_VISIVEL(true);
     conteudo.innerHTML = `
       <a class="voltar" href="#/inicio">&larr; Voltar</a>
@@ -573,7 +590,11 @@
           <legend><span class="num">1</span> Quem e quando</legend>
           <div class="grade-3">
             <div><label class="obrig" for="n-data">Data do fato</label><input id="n-data" type="date" name="data_fato" max="${hoje()}" value="${hoje()}" required></div>
-            <div><label class="obrig" for="n-turma">Turma</label><input id="n-turma" name="turma" list="dl-turmas" maxlength="40" placeholder="Ex.: 7º A" required></div>
+            <div><label class="obrig" for="n-turma">Turma</label>
+              ${turmas.length
+                ? `<select id="n-turma" name="turma" required>${opcoesTurma(turmas, '')}</select>`
+                : `<select id="n-turma" name="turma" required disabled><option value="">Nenhuma turma cadastrada</option></select>
+                   <p class="muted">${pode('turmas') ? 'Cadastre as turmas em <a href="#/turmas">Turmas</a>.' : 'Peça para a Direção cadastrar as turmas.'}</p>`}</div>
             <div><label class="obrig" for="n-aluno">Estudante</label><input id="n-aluno" name="aluno" list="dl-alunos" maxlength="150" placeholder="Nome completo" required></div>
           </div>
         </fieldset>
@@ -829,13 +850,14 @@
           const tiposOk = todosTipos.filter((t) => t.ativo || t.id === o.tipo_id);
           const cats = categoriasVisiveis(true);
           if (!cats.includes(o.categoria)) cats.push(o.categoria);
+          const turmas = await turmasAtivas();
           const f = $('#f-editar');
           f.innerHTML = `
             <h2 style="margin-top:0">Editar ocorrência nº ${o.id}</h2>
             <p class="muted">Corrija o que for preciso. A correção fica registrada na linha do tempo, com o que mudou, quem corrigiu e quando.</p>
             <div class="grade-3">
               <div><label class="obrig" for="ed-data">Data do fato</label><input id="ed-data" type="date" name="data_fato" max="${hoje()}" value="${esc(o.data_fato)}" required></div>
-              <div><label class="obrig" for="ed-turma">Turma</label><input id="ed-turma" name="turma" list="dl-turmas" maxlength="40" value="${esc(o.turma)}" required></div>
+              <div><label class="obrig" for="ed-turma">Turma</label><select id="ed-turma" name="turma" required>${opcoesTurma(turmas, o.turma)}</select></div>
               <div><label class="obrig" for="ed-aluno">Estudante</label><input id="ed-aluno" name="aluno" list="dl-alunos" maxlength="150" value="${esc(o.aluno)}" required></div>
             </div>
             <div class="grade-2">
@@ -1446,6 +1468,94 @@
     }));
   }
 
+  /* ================= Turmas (cadastro) ================= */
+  async function telaTurmas() {
+    if (!pode('turmas')) throw new Error('Sua função não tem acesso ao cadastro de turmas.');
+    const lista = ok(await sb.from('turmas').select('*'));
+    lista.sort((a, b) => (b.ativo - a.ativo) || ordemNatural(a.nome, b.nome));
+    // Quantas ocorrências cada turma tem (para saber se pode excluir)
+    const contagem = {};
+    await Promise.all(lista.map(async (t) => {
+      const r = await sb.from('ocorrencias').select('id', { count: 'exact', head: true }).eq('turma', t.nome);
+      contagem[t.id] = r.count || 0;
+    }));
+    const ativas = lista.filter((t) => t.ativo).length;
+
+    conteudo.innerHTML = `
+      <div class="cabecalho-pagina"><div><h1>Turmas</h1>
+        <p class="muted">Só as turmas desta lista aparecem para escolher ao registrar uma ocorrência. ${ativas} turma(s) ativa(s).</p></div></div>
+
+      <form class="folha" id="f-turma">
+        <h3>Cadastrar turmas</h3>
+        <p class="muted">Escreva uma turma por linha. Dá para colar a lista inteira de uma vez, por exemplo no começo do ano.</p>
+        <label for="tu-nomes">Turmas</label>
+        <textarea id="tu-nomes" rows="5" placeholder="6º A&#10;6º B&#10;7º A&#10;1ª série EM A"></textarea>
+        <p class="erro" id="tu-erro" role="alert"></p>
+        <button class="btn" type="submit">Cadastrar</button>
+      </form>
+
+      <h2>Turmas cadastradas</h2>
+      ${lista.length ? `<div class="tabela-wrap"><table>
+        <thead><tr><th>Turma</th><th class="num">Ocorrências</th><th>Situação</th><th>Ações</th></tr></thead>
+        <tbody>${lista.map((t) => `
+          <tr>
+            <td><strong>${esc(t.nome)}</strong></td>
+            <td class="num">${contagem[t.id]}</td>
+            <td>${t.ativo ? 'Ativa' : '<span class="muted">Desativada</span>'}</td>
+            <td class="acoes-tabela">
+              <button class="btn sec peq" type="button" data-renomear-turma="${t.id}" data-nome="${esc(t.nome)}">Renomear</button>
+              <button class="btn sec peq" type="button" data-ativar-turma="${t.id}" data-valor="${t.ativo ? 0 : 1}" data-nome="${esc(t.nome)}">${t.ativo ? 'Desativar' : 'Reativar'}</button>
+              ${contagem[t.id] ? '' : `<button class="btn perigo peq" type="button" data-excluir-turma="${t.id}" data-nome="${esc(t.nome)}">Excluir</button>`}
+            </td>
+          </tr>`).join('')}</tbody></table></div>
+        <p class="muted" style="margin-top:.7rem">Turmas com ocorrências não podem ser excluídas, para não perder o histórico: desative quando a turma deixar de existir. Ao renomear, o nome muda também nas ocorrências antigas.</p>`
+        : '<p class="muted">Nenhuma turma cadastrada ainda.</p>'}`;
+
+    $('#f-turma').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const nomes = [...new Set($('#tu-nomes').value.split(/\r?\n/).map((n) => n.trim().replace(/\s+/g, ' ')).filter(Boolean))];
+      if (!nomes.length) { $('#tu-erro').textContent = 'Escreva pelo menos uma turma.'; return; }
+      const longas = nomes.filter((n) => n.length > 40);
+      if (longas.length) { $('#tu-erro').textContent = `Nome muito longo (máximo 40 letras): ${longas[0]}`; return; }
+      const existentes = new Set(lista.map((t) => t.nome.toLowerCase()));
+      const novas = nomes.filter((n) => !existentes.has(n.toLowerCase()));
+      const repetidas = nomes.length - novas.length;
+      try {
+        if (novas.length) ok(await sb.from('turmas').insert(novas.map((nome) => ({ nome }))));
+        toast(`${novas.length} turma(s) cadastrada(s).${repetidas ? ` ${repetidas} já existia(m).` : ''}`);
+        telaTurmas();
+      } catch (err) {
+        $('#tu-erro').textContent = /duplicate|unique/i.test(err.message) ? 'Alguma dessas turmas já está cadastrada.' : erroPT(err);
+      }
+    });
+    $$('button[data-renomear-turma]').forEach((b) => b.addEventListener('click', async () => {
+      const novo = prompt(`Novo nome para a turma ${b.dataset.nome}:`, b.dataset.nome);
+      if (!novo || !novo.trim() || novo.trim() === b.dataset.nome) return;
+      if (!confirm(`Renomear "${b.dataset.nome}" para "${novo.trim()}"? O nome muda também em todas as ocorrências desta turma.`)) return;
+      try {
+        ok(await sb.from('turmas').update({ nome: novo.trim() }).eq('id', b.dataset.renomearTurma));
+        toast('Turma renomeada.');
+        telaTurmas();
+      } catch (err) { toast(/duplicate|unique/i.test(err.message) ? 'Já existe uma turma com esse nome.' : erroPT(err)); }
+    }));
+    $$('button[data-ativar-turma]').forEach((b) => b.addEventListener('click', async () => {
+      const ativar = b.dataset.valor === '1';
+      if (!ativar && !confirm(`Desativar a turma ${b.dataset.nome}? Ela some da lista ao registrar ocorrências, mas o histórico continua.`)) return;
+      try {
+        ok(await sb.from('turmas').update({ ativo: ativar }).eq('id', b.dataset.ativarTurma));
+        telaTurmas();
+      } catch (err) { toast(erroPT(err)); }
+    }));
+    $$('button[data-excluir-turma]').forEach((b) => b.addEventListener('click', async () => {
+      if (!confirm(`Excluir a turma ${b.dataset.nome}?`)) return;
+      try {
+        ok(await sb.from('turmas').delete().eq('id', b.dataset.excluirTurma));
+        toast('Turma excluída.');
+        telaTurmas();
+      } catch (err) { toast(erroPT(err)); }
+    }));
+  }
+
   /* ================= Limpeza anual (somente Direção) ================= */
   function baixarArquivo(nome, conteudo, tipo) {
     const url = URL.createObjectURL(new Blob([conteudo], { type: tipo }));
@@ -1656,7 +1766,7 @@
 
   /* ================= Auditoria (Direção) ================= */
   const ACOES = ['LOGIN', 'LOGOUT', 'OCORRENCIA_CRIADA', 'OCORRENCIA_VISUALIZADA', 'OCORRENCIA_ATUALIZADA', 'MENSAGEM_ENVIADA',
-    'PDF_OCORRENCIA', 'PDF_RELATORIO', 'SAIR_DE_TODOS', 'ANEXO_ADICIONADO', 'ANEXO_ABERTO', 'ANEXO_REMOVIDO', 'OCORRENCIA_EDITADA', 'OCORRENCIA_EXCLUIDA', 'LIMPEZA_OCORRENCIAS', 'CATEGORIA_CRIADA', 'CATEGORIA_ALTERADA',
+    'PDF_OCORRENCIA', 'PDF_RELATORIO', 'SAIR_DE_TODOS', 'ANEXO_ADICIONADO', 'ANEXO_ABERTO', 'ANEXO_REMOVIDO', 'OCORRENCIA_EDITADA', 'OCORRENCIA_EXCLUIDA', 'TURMA_ALTERADA', 'LIMPEZA_OCORRENCIAS', 'CATEGORIA_CRIADA', 'CATEGORIA_ALTERADA',
     'USUARIO_FUNCAO', 'USUARIO_ATIVADO', 'USUARIO_DESATIVADO', 'FUNCAO_ALTERADA',
     'TIPO_ALTERADO', 'CONFIG_ALTERADA'];
 
@@ -1731,7 +1841,7 @@
     });
   }
 
-  /* ================= Início ================= */
+  /* ================= Inicialização ================= */
   (async function iniciar() {
     if (!configurado) return mostrarEtapa('sem-config');
     try {
