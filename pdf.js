@@ -62,6 +62,11 @@ window.EducaApoioPDF = (function () {
     p.texto(`Categoria: ${oc.categoria_nome || CATEGORIA[oc.categoria] || oc.categoria}`);
     p.texto(`Tipo de ocorrência: ${oc.tipo_nome}`);
     p.texto(`Situação: ${STATUS[oc.status]}`);
+    if (oc.grupo) {
+      p.texto(oc.grupo_ids && oc.grupo_ids.length
+        ? `Ocorrência em grupo: o mesmo fato foi registrado também nas ocorrências nº ${oc.grupo_ids.join(', ')}, de outros estudantes.`
+        : 'Ocorrência em grupo: o mesmo fato foi registrado também para outros estudantes.', { tam: 9 });
+    }
     p.texto(`Registrado por: ${oc.autor_nome}${oc.autor_funcao ? ` (${oc.autor_funcao})` : ''} em ${dataHora(oc.criado_em)}`);
     p.espaco(8);
     p.texto('Descrição do fato', { negrito: true });
@@ -126,6 +131,8 @@ window.EducaApoioPDF = (function () {
     p.espaco(4);
     const c = { ABERTA: 0, EM_ACOMPANHAMENTO: 0, ENCERRADA: 0 };
     lista.forEach((o) => { c[o.status]++; });
+    const grupos = {};
+    lista.forEach((o) => { if (o.grupo) (grupos[o.grupo] = grupos[o.grupo] || []).push(o.id); });
     p.texto(`Total: ${lista.length}   Abertas: ${c.ABERTA}   Em acompanhamento: ${c.EM_ACOMPANHAMENTO}   Encerradas: ${c.ENCERRADA}`, { negrito: true });
     p.espaco(4);
     p.linha();
@@ -134,6 +141,9 @@ window.EducaApoioPDF = (function () {
       p.precisa(70);
       p.texto(`Nº ${o.id}  ${dataBR(o.data_fato)}  ${o.aluno} (${o.turma})`, { negrito: true });
       p.texto(`${o.categoria_nome || CATEGORIA[o.categoria] || o.categoria} / ${o.tipo_nome}   Situação: ${STATUS[o.status]}   Registro: ${o.autor_nome}`, { tam: 9 });
+      if (o.grupo && grupos[o.grupo] && grupos[o.grupo].length > 1) {
+        p.texto(`Em grupo com as ocorrências nº ${grupos[o.grupo].filter((x) => x !== o.id).join(', ')} (mesmo fato).`, { tam: 9 });
+      }
       p.texto(`Fato: ${o.descricao}`, { tam: 9 });
       p.texto(`Providências: ${o.providencias}`, { tam: 9 });
       p.espaco(2);

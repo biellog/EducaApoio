@@ -344,3 +344,16 @@ a.numero:hover { border-color: var(--caneta); }
 
 /* Turmas */
 .acoes-tabela { display: flex; gap: .4rem; flex-wrap: wrap; }
+
+/* Ocorrência em grupo */
+.envolvidos { display: flex; flex-direction: column; gap: .2rem; margin-bottom: .8rem; }
+.envolvido { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(200px, 2fr) auto; gap: 0 1rem; align-items: end; padding-bottom: .6rem; border-bottom: 1px dashed var(--linha); }
+.envolvido .remover-envolvido { margin-bottom: 4px; }
+.grupo-box { margin: 1rem 0 .4rem; padding: .8rem 1rem; background: var(--caneta-clara); border-left: 4px solid var(--caneta); border-radius: 0; }
+.grupo-box ul { margin: .4rem 0 0; padding-left: 1.2rem; }
+.grupo-box li { margin: .25rem 0; }
+.tag-grupo { font-size: .8rem; font-weight: 800; color: var(--caneta); }
+@media (max-width: 900px) {
+  .envolvido { grid-template-columns: 1fr; }
+  .envolvido .remover-envolvido { justify-self: start; margin-top: .4rem; }
+}

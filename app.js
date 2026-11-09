@@ -122,34 +122,50 @@
     return String(nome || 'arquivo').replace(/[\\/:*?"<>|]+/g, '_').slice(0, 150);
   }
 
-  // Envia um arquivo para a ocorrência: guarda o arquivo e depois o registro
-  async function enviarAnexo(ocId, arquivo) {
+  // Prepara o arquivo uma vez (reduz a foto) para poder anexar em uma ou várias ocorrências
+  async function prepararArquivo(arquivo) {
     const pdf = arquivo.type === 'application/pdf' || /\.pdf$/i.test(arquivo.name);
     if (!pdf && !/^image\//.test(arquivo.type)) throw new Error(`"${arquivo.name}" não é foto nem PDF.`);
     let blob = arquivo;
-    let tipo = 'application/pdf';
     let nome = nomeSeguro(arquivo.name);
     if (!pdf) {
       blob = await comprimirImagem(arquivo);
-      tipo = 'image/jpeg';
       nome = nome.replace(/\.[^.]+$/, '') + '.jpg';
     }
     if (blob.size > MAX_ANEXO) throw new Error(`"${arquivo.name}" passa de 10 MB. Envie um arquivo menor.`);
-    const caminho = `${ocId}/${crypto.randomUUID()}.${pdf ? 'pdf' : 'jpg'}`;
-    const up = await sb.storage.from('anexos').upload(caminho, blob, { contentType: tipo, upsert: false });
+    return { blob, nome, tipo: pdf ? 'application/pdf' : 'image/jpeg', ext: pdf ? 'pdf' : 'jpg', original: arquivo.name };
+  }
+
+  // Guarda o arquivo na pasta da ocorrência e depois o registro dele
+  async function enviarPreparado(ocId, prep) {
+    const caminho = `${ocId}/${crypto.randomUUID()}.${prep.ext}`;
+    const up = await sb.storage.from('anexos').upload(caminho, prep.blob, { contentType: prep.tipo, upsert: false });
     if (up.error) throw new Error(erroPT(up.error));
-    const ins = await sb.from('anexos').insert({ ocorrencia_id: ocId, caminho, nome, tipo, tamanho: blob.size });
+    const ins = await sb.from('anexos').insert({ ocorrencia_id: ocId, caminho, nome: prep.nome, tipo: prep.tipo, tamanho: prep.blob.size });
     if (ins.error) {
       await sb.storage.from('anexos').remove([caminho]);
       throw new Error(erroPT(ins.error));
     }
   }
 
-  async function enviarVarios(ocId, arquivos, aoProgresso) {
+  async function enviarAnexo(ocId, arquivo) {
+    await enviarPreparado(ocId, await prepararArquivo(arquivo));
+  }
+
+  // Anexa os arquivos a uma ocorrência (número) ou a várias (lista de números)
+  async function enviarVarios(ocIds, arquivos, aoProgresso) {
+    const ids = Array.isArray(ocIds) ? ocIds : [ocIds];
     const falhas = [];
-    for (let i = 0; i < arquivos.length; i++) {
-      if (aoProgresso) aoProgresso(i + 1, arquivos.length);
-      try { await enviarAnexo(ocId, arquivos[i]); } catch (e) { falhas.push(e.message); }
+    const total = arquivos.length * ids.length;
+    let feito = 0;
+    for (const arq of arquivos) {
+      let prep;
+      try { prep = await prepararArquivo(arq); } catch (e) { falhas.push(e.message); feito += ids.length; continue; }
+      for (const id of ids) {
+        feito += 1;
+        if (aoProgresso) aoProgresso(feito, total);
+        try { await enviarPreparado(id, prep); } catch (e) { falhas.push(`${prep.original} (ocorrência nº ${id}): ${e.message}`); }
+      }
     }
     return falhas;
   }
@@ -509,7 +525,7 @@
         <thead><tr><th>Nº</th><th>Data</th><th>Estudante</th><th>Turma</th><th>Tipo</th><th>Registrado por</th><th>Situação</th></tr></thead>
         <tbody>${r.data.map((o) => `
           <tr class="clicavel" data-id="${o.id}" tabindex="0">
-            <td class="num">${o.id}</td><td>${dataBR(o.data_fato)}</td><td>${esc(o.aluno)}</td><td>${esc(o.turma)}</td>
+            <td class="num">${o.id}</td><td>${dataBR(o.data_fato)}</td><td>${esc(o.aluno)}${o.grupo ? '<br><span class="tag-grupo">Em grupo</span>' : ''}</td><td>${esc(o.turma)}</td>
             <td>${esc(o.tipo_nome)}${o.categoria === 'CONVIVA' ? '<br><span class="tag-conviva">Conviva</span>' : ''}</td>
             <td>${esc(o.autor_nome)}</td><td>${carimbo(o.status)}</td>
           </tr>`).join('')}</tbody>
@@ -588,15 +604,11 @@
       <form id="f-nova">
         <fieldset class="etapa">
           <legend><span class="num">1</span> Quem e quando</legend>
-          <div class="grade-3">
-            <div><label class="obrig" for="n-data">Data do fato</label><input id="n-data" type="date" name="data_fato" max="${hoje()}" value="${hoje()}" required></div>
-            <div><label class="obrig" for="n-turma">Turma</label>
-              ${turmas.length
-                ? `<select id="n-turma" name="turma" required>${opcoesTurma(turmas, '')}</select>`
-                : `<select id="n-turma" name="turma" required disabled><option value="">Nenhuma turma cadastrada</option></select>
-                   <p class="muted">${pode('turmas') ? 'Cadastre as turmas em <a href="#/turmas">Turmas</a>.' : 'Peça para a Direção cadastrar as turmas.'}</p>`}</div>
-            <div><label class="obrig" for="n-aluno">Estudante</label><input id="n-aluno" name="aluno" list="dl-alunos" maxlength="150" placeholder="Nome completo" required></div>
-          </div>
+          <div style="max-width:260px"><label class="obrig" for="n-data">Data do fato</label><input id="n-data" type="date" name="data_fato" max="${hoje()}" value="${hoje()}" required></div>
+          ${turmas.length ? '' : `<p class="erro">Nenhuma turma cadastrada. ${pode('turmas') ? 'Cadastre as turmas em <a href="#/turmas">Turmas</a>.' : 'Peça para a Direção cadastrar as turmas.'}</p>`}
+          <div id="envolvidos" class="envolvidos"></div>
+          <button class="btn sec" type="button" id="b-mais-aluno" ${turmas.length ? '' : 'disabled'}>+ Adicionar outro estudante</button>
+          <p class="muted" id="aviso-grupo" style="margin-top:.6rem">Briga ou fato com estudantes de turmas diferentes? Adicione todos aqui: cada um ganha a própria ocorrência, ligada às outras.</p>
         </fieldset>
         <fieldset class="etapa">
           <legend><span class="num">2</span> O que aconteceu</legend>
@@ -625,6 +637,42 @@
         <div class="acoes acoes-grandes"><button class="btn grande" type="submit">Salvar ocorrência</button><a class="btn sec grande" href="#/inicio">Cancelar</a></div>
       </form>`;
 
+    const datalistAlunos = $('#dl-alunos') ? 'dl-alunos' : '';
+    const linhaEnvolvido = () => `
+      <div class="envolvido">
+        <div><label class="obrig">Turma</label><select required ${turmas.length ? '' : 'disabled'}>${opcoesTurma(turmas, '')}</select></div>
+        <div><label class="obrig">Estudante</label><input list="${datalistAlunos}" maxlength="150" placeholder="Nome completo" required></div>
+        <button class="btn perigo peq remover-envolvido" type="button" title="Remover este estudante">Remover</button>
+      </div>`;
+    const renumerar = () => {
+      const linhas = $$('#envolvidos .envolvido');
+      linhas.forEach((l, i) => {
+        const [lt, la] = $$('label', l);
+        const sel = $('select', l);
+        const inp = $('input', l);
+        sel.id = `n-turma-${i}`; inp.id = `n-aluno-${i}`;
+        lt.setAttribute('for', sel.id); la.setAttribute('for', inp.id);
+        la.textContent = linhas.length > 1 ? `Estudante ${i + 1}` : 'Estudante';
+        $('.remover-envolvido', l).classList.toggle('oculto', linhas.length === 1);
+      });
+      $('#aviso-grupo').innerHTML = linhas.length > 1
+        ? `<strong>${linhas.length} estudantes:</strong> serão criadas ${linhas.length} ocorrências ligadas, uma para cada um, com a mesma descrição, providências e fotos.`
+        : 'Briga ou fato com estudantes de turmas diferentes? Adicione todos aqui: cada um ganha a própria ocorrência, ligada às outras.';
+    };
+    const adicionarEnvolvido = (focar) => {
+      $('#envolvidos').insertAdjacentHTML('beforeend', linhaEnvolvido());
+      renumerar();
+      if (focar) $('#envolvidos .envolvido:last-child select').focus();
+    };
+    $('#envolvidos').addEventListener('click', (e) => {
+      const b = e.target.closest('.remover-envolvido');
+      if (!b) return;
+      b.closest('.envolvido').remove();
+      renumerar();
+    });
+    $('#b-mais-aluno').addEventListener('click', () => adicionarEnvolvido(true));
+    adicionarEnvolvido(false);
+
     const preencherTipos = () => {
       const cat = $('#n-cat').value;
       const lista = tipos.filter((t) => t.categoria === cat);
@@ -647,16 +695,24 @@
       try {
         const d = lerForm(e.target);
         const arquivos = Array.from($('#n-anexos').files);
-        const r = ok(await sb.from('ocorrencias').insert({
-          data_fato: d.data_fato, turma: d.turma, aluno: d.aluno, tipo_id: Number(d.tipo_id),
-          descricao: d.descricao, providencias: d.providencias, status: d.status,
-        }).select('id').single());
+        const envolvidos = $$('#envolvidos .envolvido').map((l) => ({
+          turma: $('select', l).value, aluno: $('input', l).value.trim().replace(/\s+/g, ' '),
+        }));
+        if (envolvidos.some((x) => !x.turma || !x.aluno)) throw new Error('Preencha a turma e o nome de cada estudante, ou remova a linha vazia.');
+        const repetido = envolvidos.find((x, i) => envolvidos.findIndex((y) => y.aluno.toLowerCase() === x.aluno.toLowerCase() && y.turma === x.turma) !== i);
+        if (repetido) throw new Error(`${repetido.aluno} (${repetido.turma}) aparece duas vezes.`);
+        const grupo = envolvidos.length > 1 ? crypto.randomUUID() : null;
+        const criadas = ok(await sb.from('ocorrencias').insert(envolvidos.map((x) => ({
+          data_fato: d.data_fato, turma: x.turma, aluno: x.aluno, tipo_id: Number(d.tipo_id),
+          descricao: d.descricao, providencias: d.providencias, status: d.status, grupo,
+        }))).select('id'));
+        const ids = criadas.map((c) => c.id).sort((x, y) => x - y);
         if (arquivos.length) {
-          const falhas = await enviarVarios(r.id, arquivos, (i, n) => { botao.textContent = `Enviando anexo ${i} de ${n}…`; });
-          if (falhas.length) alert('A ocorrência foi salva, mas alguns anexos não foram enviados:\n\n' + falhas.join('\n') + '\n\nVocê pode anexá-los de novo na tela da ocorrência.');
+          const falhas = await enviarVarios(ids, arquivos, (i, n) => { botao.textContent = `Enviando anexos ${i} de ${n}…`; });
+          if (falhas.length) alert('As ocorrências foram salvas, mas alguns anexos não foram enviados:\n\n' + falhas.join('\n') + '\n\nVocê pode anexá-los de novo na tela de cada ocorrência.');
         }
-        toast('Ocorrência registrada.');
-        location.hash = '#/ocorrencia/' + r.id;
+        toast(ids.length > 1 ? `${ids.length} ocorrências registradas, uma para cada estudante.` : 'Ocorrência registrada.');
+        location.hash = '#/ocorrencia/' + ids[0];
       } catch (err) {
         $('#n-erro').textContent = erroPT(err);
         botao.disabled = false;
@@ -706,6 +762,10 @@
     const encerrada = o.status === 'ENCERRADA';
     // Mesma regra do banco: Direção sempre; quem registrou ou quem acompanha, se não estiver encerrada
     const podeEditar = ehDirecao() || (!encerrada && (o.autor_id === eu.id || pode('acompanhar')));
+    // Outras ocorrências do mesmo fato (grupo), que a pessoa pode ver
+    const grupoOutros = o.grupo
+      ? ok(await sb.from('v_ocorrencias').select('id, aluno, turma, status').eq('grupo', o.grupo).neq('id', id).order('id'))
+      : [];
     const [historico, mensagens, totalAluno, anexos] = await Promise.all([
       sb.from('historico_status').select('*, usuario:perfis(nome)').eq('ocorrencia_id', id).order('id').then(ok),
       comChat ? sb.from('mensagens').select(SEL_MSG).eq('ocorrencia_id', id).order('id').then(ok) : Promise.resolve([]),
@@ -755,6 +815,13 @@
             <dt>Categoria</dt><dd>${esc(o.categoria_nome || nomeCategoria(o.categoria))}</dd>
             <dt>Tipo</dt><dd>${esc(o.tipo_nome)}</dd>
           </dl>
+          ${o.grupo ? `
+          <div class="grupo-box">
+            <strong>Ocorrência em grupo.</strong> O mesmo fato foi registrado também para:
+            ${grupoOutros.length ? `<ul>${grupoOutros.map((g) => `<li><a href="#/ocorrencia/${g.id}">${esc(g.aluno)} (${esc(g.turma)})</a>, nº ${g.id} ${carimbo(g.status)}</li>`).join('')}</ul>`
+              : '<p class="muted" style="margin:.3rem 0 0">outros estudantes que você não tem permissão para ver.</p>'}
+            <p class="muted" style="margin:.4rem 0 0">Cada estudante tem a própria ocorrência: editar, encerrar ou excluir vale só para esta.</p>
+          </div>` : ''}
           <h2>Descrição do fato</h2><div class="texto-livre">${esc(o.descricao)}</div>
           <h2>Providências adotadas</h2><div class="texto-livre">${esc(o.providencias)}</div>
           ${podeEditar ? '<button class="btn sec" type="button" id="b-editar">Editar ocorrência</button>' : ''}
@@ -993,7 +1060,7 @@
             }
             lista.push(item);
           }
-          window.EducaApoioPDF.ficha(o, historico, escola, eu.nome, lista);
+          window.EducaApoioPDF.ficha({ ...o, grupo_ids: grupoOutros.map((g) => g.id) }, historico, escola, eu.nome, lista);
           auditar('PDF_OCORRENCIA', 'ocorrencia', id);
         } catch (err) {
           toast(erroPT(err));
