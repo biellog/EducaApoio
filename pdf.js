@@ -102,7 +102,7 @@ window.EducaApoioPDF = (function () {
     if (anexos && anexos.length) {
       d.addPage();
       p.setY(M);
-      p.texto(`Anexos da ocorrência nº ${oc.id}`, { tam: 12, negrito: true });
+      p.texto(`Anexos da ocorrência`, { tam: 12, negrito: true });
       p.espaco(4);
       anexos.forEach((a, i) => {
         const legenda = `${i + 1}. ${a.nome} (anexado por ${a.usuario} em ${dataHora(a.criado_em)})`;
