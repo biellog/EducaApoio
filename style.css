@@ -357,3 +357,16 @@ a.numero:hover { border-color: var(--caneta); }
   .envolvido { grid-template-columns: 1fr; }
   .envolvido .remover-envolvido { justify-self: start; margin-top: .4rem; }
 }
+
+/* Alerta de faltas */
+.alerta-faltas { background: var(--vermelho-claro); border: 2px solid var(--vermelho); border-left-width: 8px; border-radius: 12px; padding: 1rem 1.3rem; margin: 0 0 1.4rem; }
+.alerta-faltas h2 { color: var(--vermelho); margin: 0 0 .5rem; font-size: 1.15rem; }
+.alerta-faltas ul { margin: 0 0 .6rem; padding-left: 1.2rem; }
+.alerta-faltas li { margin: .35rem 0; }
+.alerta-faltas a { color: var(--tinta); }
+.alerta-faltas p { margin: 0; }
+.toast.toast-alerta { background: var(--vermelho); border-left-color: #fff; font-weight: 700; font-size: 1.05rem; max-width: 460px; animation: piscar 1s ease-in-out 3; }
+@keyframes piscar { 50% { transform: scale(1.03); } }
+.lista-notif a.alerta { background: var(--vermelho-claro); border-left: 4px solid var(--vermelho); color: var(--vermelho); }
+.tag-falta { font-size: .78rem; font-weight: 800; color: var(--vermelho); background: var(--vermelho-claro); padding: .05rem .4rem; border-radius: 4px; }
+@media (prefers-reduced-motion: reduce) { .toast.toast-alerta { animation: none; } }

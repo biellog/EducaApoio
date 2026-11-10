@@ -70,13 +70,16 @@
   }
 
   let toastTimer;
-  function toast(texto, aoClicar) {
+  function toast(texto, aoClicar, alerta) {
     const t = $('#toast');
     t.textContent = texto;
+    t.classList.toggle('toast-alerta', !!alerta);
+    t.setAttribute('role', alerta ? 'alert' : 'status');
     t.classList.remove('oculto');
     t.onclick = () => { t.classList.add('oculto'); if (aoClicar) aoClicar(); };
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => t.classList.add('oculto'), 6000);
+    // Alerta especial fica na tela até alguém clicar
+    if (!alerta) toastTimer = setTimeout(() => t.classList.add('oculto'), 6000);
   }
 
   // Senha longa e aleatória, descartada: ninguém entra por senha, só por código no e-mail
@@ -396,7 +399,7 @@
     c.textContent = naoLidas > 29 ? '30+' : naoLidas;
     c.classList.toggle('oculto', !naoLidas);
     $('#lista-notif').innerHTML = itens.length
-      ? itens.map((i) => `<a href="#/ocorrencia/${i.ocorrencia_id}" class="${i.lida ? '' : 'nao-lida'}">${esc(i.texto)}<br><span class="muted">${dataHora(i.criado_em)}</span></a>`).join('')
+      ? itens.map((i) => `<a href="#/ocorrencia/${i.ocorrencia_id}" class="${i.lida ? '' : 'nao-lida'}${i.tipo === 'alerta' ? ' alerta' : ''}">${esc(i.texto)}<br><span class="muted">${dataHora(i.criado_em)}</span></a>`).join('')
       : '<p class="vazio">Nenhum aviso por enquanto.</p>';
   }
   $('#botao-sino').addEventListener('click', async (e) => {
@@ -426,7 +429,11 @@
         c.classList.remove('oculto');
         avisosNaoLidos += 1;
         atualizarTitulo();
-        if (!(ocAtual === n.ocorrencia_id && /comentou/.test(n.texto))) {
+        if (n.tipo === 'alerta') {
+          toast(n.texto + ' (clique para ver)', () => { location.hash = '#/ocorrencia/' + n.ocorrencia_id; }, true);
+          tocarSom();
+          setTimeout(() => tocarSom(), 900);
+        } else if (!(ocAtual === n.ocorrencia_id && /comentou/.test(n.texto))) {
           toast(n.texto, () => { location.hash = '#/ocorrencia/' + n.ocorrencia_id; });
           tocarSom();
         }
@@ -561,6 +568,26 @@
       nomes.map((n) => `<option value="${esc(n)}" ${n === atual ? 'selected' : ''}>${esc(n)}${lista.includes(n) ? '' : ' (desativada)'}</option>`).join('');
   }
 
+  /* ================= Alerta de faltas seguidas ================= */
+  async function alertasFaltas() {
+    const r = await sb.rpc('alertas_faltas');
+    return r.error ? null : r.data; // null = migração ainda não rodada
+  }
+  function htmlAlertasFaltas(lista, compacto) {
+    if (!lista || !lista.length) return '';
+    const limite = escola.limite_faltas || 3;
+    const linhas = (compacto ? lista.slice(0, 6) : lista).map((a) => `
+      <li><a href="#/ocorrencias?${qs({ aluno: a.aluno })}"><strong>${esc(a.aluno)}</strong> (${esc(a.turma)})</a>:
+        <strong>${a.qtd} faltas seguidas</strong>, de ${dataBR(a.inicio)} a ${dataBR(a.fim)}</li>`).join('');
+    return `
+      <section class="alerta-faltas" role="alert">
+        <h2>Alerta de faltas: ${lista.length} estudante(s) com mais de ${limite} faltas seguidas</h2>
+        <ul>${linhas}</ul>
+        ${compacto && lista.length > 6 ? `<p><a href="#/painel">Ver todos no Painel</a></p>` : ''}
+        <p class="muted">Considera dias úteis seguidos (segunda a sexta) e a última falta nos últimos 30 dias. Clique no nome para ver o histórico.</p>
+      </section>`;
+  }
+
   /* ================= Início ================= */
   async function telaInicio() {
     const contar = (status) => {
@@ -568,7 +595,7 @@
       if (!pode('ver_todas')) q = q.eq('autor_id', eu.id);
       return q.then((r) => r.count || 0);
     };
-    const [abertas, acomp] = await Promise.all([contar('ABERTA'), contar('EM_ACOMPANHAMENTO')]);
+    const [abertas, acomp, faltas] = await Promise.all([contar('ABERTA'), contar('EM_ACOMPANHAMENTO'), alertasFaltas()]);
     const primeiroNome = String(eu.nome || '').split(' ')[0];
     const hora = new Date().getHours();
     const saudacao = hora < 12 ? 'Bom dia' : hora < 18 ? 'Boa tarde' : 'Boa noite';
@@ -577,6 +604,7 @@
     conteudo.innerHTML = `
       <div class="cabecalho-pagina"><div><h1>${saudacao}, ${esc(primeiroNome)}!</h1>
         <p class="muted">O que você quer fazer agora?</p></div></div>
+      ${htmlAlertasFaltas(faltas, true)}
       <div class="atalhos">
         ${pode('registrar') ? atalho('#/nova', 'Registrar ocorrência', 'Anotar um fato novo, com fotos se precisar.', true) : ''}
         ${atalho('#/ocorrencias', pode('ver_todas') ? 'Ver ocorrências' : 'Minhas ocorrências', 'Procurar pelo nome do estudante ou pela turma.')}
@@ -684,6 +712,13 @@
     };
     $('#n-cat').addEventListener('change', preencherTipos);
     preencherTipos();
+    $('#n-tipo').addEventListener('change', () => {
+      const t = tipos.find((x) => String(x.id) === $('#n-tipo').value);
+      if (t && t.e_falta) {
+        if (!$('#n-desc').value.trim()) $('#n-desc').value = 'Estudante ausente.';
+        if (!$('#n-prov').value.trim()) $('#n-prov').value = 'Registro de ausência.';
+      }
+    });
     $('#n-anexos').addEventListener('change', (e) => {
       $('#n-lista').innerHTML = Array.from(e.target.files).map((f) => `<li>${esc(f.name)} <span class="muted">(${tamanhoTexto(f.size)})</span></li>`).join('');
     });
@@ -1123,6 +1158,7 @@
         <section class="folha"><h3>Por tipo</h3>${barras(d.por_tipo, (t) => t)}</section>
         <section class="folha"><h3>Por turma</h3>${barras(d.por_turma, (t) => t)}</section>
       </div>
+      ${htmlAlertasFaltas(await alertasFaltas(), false)}
       <h2>Estudantes com mais ocorrências</h2>
       <p class="muted">Em destaque, quem tem ${d.limite_atencao} ou mais registros no período: avalie acompanhamento especial.</p>
       ${d.alunos.length ? `<div class="tabela-wrap"><table>
@@ -1399,6 +1435,7 @@
           <div><label class="obrig" for="c-nome">Nome da escola</label><input id="c-nome" name="escola_nome" maxlength="150" required value="${esc(escola.escola_nome)}"></div>
           <div><label for="c-end">Endereço (aparece nos PDFs)</label><input id="c-end" name="escola_endereco" maxlength="200" value="${esc(escola.escola_endereco)}"></div>
           <div><label for="c-lim">Destacar estudantes a partir de quantas ocorrências</label><input id="c-lim" name="limite_atencao" type="number" min="1" max="100" value="${escola.limite_atencao}"></div>
+          <div><label for="c-faltas">Alertar quando o estudante passar de quantas faltas seguidas</label><input id="c-faltas" name="limite_faltas" type="number" min="1" max="30" value="${escola.limite_faltas || 3}"></div>
         </div>
         <p class="erro" id="c-erro" role="alert"></p>
         <button class="btn" type="submit">Salvar dados da escola</button>
@@ -1440,8 +1477,11 @@
           </div>
           <ul class="lista-tipos">
             ${lista.filter((t) => t.categoria === c.id).map((t) => `
-              <li><span>${esc(t.nome)}${t.ativo ? '' : ' <span class="muted">(desativado)</span>'}</span>
-                  <button class="btn sec peq" type="button" data-id="${t.id}" data-ativo="${t.ativo ? 0 : 1}">${t.ativo ? 'Desativar' : 'Reativar'}</button></li>`).join('') || '<li class="muted">Nenhum tipo ainda.</li>'}
+              <li><span>${esc(t.nome)}${t.e_falta ? ' <span class="tag-falta">conta como falta</span>' : ''}${t.ativo ? '' : ' <span class="muted">(desativado)</span>'}</span>
+                  <span class="acoes-tabela">
+                    ${'e_falta' in t ? `<button class="btn sec peq" type="button" data-falta="${t.id}" data-valor="${t.e_falta ? 0 : 1}">${t.e_falta ? 'Não contar como falta' : 'Contar como falta'}</button>` : ''}
+                    <button class="btn sec peq" type="button" data-id="${t.id}" data-ativo="${t.ativo ? 0 : 1}">${t.ativo ? 'Desativar' : 'Reativar'}</button>
+                  </span></li>`).join('') || '<li class="muted">Nenhum tipo ainda.</li>'}
           </ul>
           <form class="f-tipo-cat" data-cat="${esc(c.id)}">
             <input name="nome" maxlength="80" required placeholder="Novo tipo nesta categoria" aria-label="Novo tipo em ${esc(c.nome)}">
@@ -1462,6 +1502,7 @@
         ok(await sb.from('configuracoes').update({
           escola_nome: d.escola_nome.trim(), escola_endereco: d.escola_endereco.trim(),
           limite_atencao: Number(d.limite_atencao) || 3,
+          ...('limite_faltas' in escola ? { limite_faltas: Math.min(30, Math.max(1, Number(d.limite_faltas) || 3)) } : {}),
         }).eq('id', 1));
         await carregarEscola();
         toast('Dados da escola salvos.');
@@ -1483,6 +1524,13 @@
     $$('button[data-id]').forEach((b) => b.addEventListener('click', async () => {
       try {
         ok(await sb.from('tipos_ocorrencia').update({ ativo: b.dataset.ativo === '1' }).eq('id', b.dataset.id));
+        telaConfiguracoes();
+      } catch (err) { toast(erroPT(err)); }
+    }));
+    $$('button[data-falta]').forEach((b) => b.addEventListener('click', async () => {
+      try {
+        ok(await sb.from('tipos_ocorrencia').update({ e_falta: b.dataset.valor === '1' }).eq('id', b.dataset.falta));
+        toast(b.dataset.valor === '1' ? 'Este tipo agora conta para o alerta de faltas.' : 'Este tipo não conta mais como falta.');
         telaConfiguracoes();
       } catch (err) { toast(erroPT(err)); }
     }));
@@ -1833,7 +1881,7 @@
 
   /* ================= Auditoria (Direção) ================= */
   const ACOES = ['LOGIN', 'LOGOUT', 'OCORRENCIA_CRIADA', 'OCORRENCIA_VISUALIZADA', 'OCORRENCIA_ATUALIZADA', 'MENSAGEM_ENVIADA',
-    'PDF_OCORRENCIA', 'PDF_RELATORIO', 'SAIR_DE_TODOS', 'ANEXO_ADICIONADO', 'ANEXO_ABERTO', 'ANEXO_REMOVIDO', 'OCORRENCIA_EDITADA', 'OCORRENCIA_EXCLUIDA', 'TURMA_ALTERADA', 'LIMPEZA_OCORRENCIAS', 'CATEGORIA_CRIADA', 'CATEGORIA_ALTERADA',
+    'PDF_OCORRENCIA', 'PDF_RELATORIO', 'SAIR_DE_TODOS', 'ANEXO_ADICIONADO', 'ANEXO_ABERTO', 'ANEXO_REMOVIDO', 'OCORRENCIA_EDITADA', 'OCORRENCIA_EXCLUIDA', 'TURMA_ALTERADA', 'ALERTA_FALTAS', 'LIMPEZA_OCORRENCIAS', 'CATEGORIA_CRIADA', 'CATEGORIA_ALTERADA',
     'USUARIO_FUNCAO', 'USUARIO_ATIVADO', 'USUARIO_DESATIVADO', 'FUNCAO_ALTERADA',
     'TIPO_ALTERADO', 'CONFIG_ALTERADA'];
 
