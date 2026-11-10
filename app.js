@@ -865,7 +865,7 @@
           <form id="f-editar" class="oculto edicao"></form>
           <div class="acoes">
             ${pode('relatorios') ? '<button class="btn sec" type="button" id="b-pdf">Gerar PDF para prontuário</button>' : ''}
-            <a class="btn sec" href="#/ocorrencias?${qs({ aluno: o.aluno })}">Histórico do estudante (${totalAluno == null ? '?' : totalAluno})</a>
+            <a class="btn sec" href="#/ocorrencias?${qs({ aluno: o.aluno })}, ${qs({ turma: o.turma })}">Histórico do estudante (${totalAluno == null ? '?' : totalAluno})</a>
           </div>
           ${pode('acompanhar') ? `
           <h2>Acompanhamento</h2>
