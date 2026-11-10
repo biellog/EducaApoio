@@ -529,10 +529,10 @@
       </form>
       ${r.data.length ? `
       <div class="tabela-wrap"><table>
-        <thead><tr><th>Nº</th><th>Data</th><th>Estudante</th><th>Turma</th><th>Tipo</th><th>Registrado por</th><th>Situação</th></tr></thead>
+        <thead><tr><th></th><th>Data</th><th>Estudante</th><th>Turma</th><th>Tipo</th><th>Registrado por</th><th>Situação</th></tr></thead>
         <tbody>${r.data.map((o) => `
           <tr class="clicavel" data-id="${o.id}" tabindex="0">
-            <td class="num">${o.id}</td><td>${dataBR(o.data_fato)}</td><td>${esc(o.aluno)}${o.grupo ? '<br><span class="tag-grupo">Em grupo</span>' : ''}</td><td>${esc(o.turma)}</td>
+            <td class="num"></td><td>${dataBR(o.data_fato)}</td><td>${esc(o.aluno)}${o.grupo ? '<br><span class="tag-grupo">Em grupo</span>' : ''}</td><td>${esc(o.turma)}</td>
             <td>${esc(o.tipo_nome)}${o.categoria === 'CONVIVA' ? '<br><span class="tag-conviva">Conviva</span>' : ''}</td>
             <td>${esc(o.autor_nome)}</td><td>${carimbo(o.status)}</td>
           </tr>`).join('')}</tbody>
