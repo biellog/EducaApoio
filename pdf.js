@@ -55,7 +55,7 @@ window.EducaApoioPDF = (function () {
   }
 
   function ficha(oc, historico, escola, geradoPor, anexos) {
-    const p = criar(`Registro de Ocorrência nº ${oc.id}`, escola);
+    const p = criar(`Registro de Ocorrência`, escola);
     p.texto(`Data do fato: ${dataBR(oc.data_fato)}`);
     p.texto(`Estudante: ${oc.aluno}`, { negrito: true });
     p.texto(`Turma: ${oc.turma}`);
