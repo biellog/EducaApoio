@@ -837,7 +837,7 @@
     conteudo.innerHTML = `
       <a class="voltar" href="#/ocorrencias">&larr; Voltar para a lista</a>
       <div class="cabecalho-pagina">
-        <div><h1>Ocorrência aluno ${o.autor_nome}</h1><p class="muted">Registrada por ${esc(o.autor_nome)}${o.autor_funcao ? ` (${esc(o.autor_funcao)})` : ''} em ${dataHora(o.criado_em)}</p></div>
+        <div><h1>Ocorrência do aluno:  ${o.aluno}</h1><p class="muted">Registrada por ${esc(o.autor_nome)}${o.autor_funcao ? ` (${esc(o.autor_funcao)})` : ''} em ${dataHora(o.criado_em)}</p></div>
         <div>${carimbo(o.status, true)}</div>
       </div>
       <div class="detalhe${comChat ? '' : ' sem-chat'}">
