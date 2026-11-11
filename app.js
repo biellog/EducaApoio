@@ -1955,6 +1955,55 @@
       location.reload();
     });
   }
+  // Função para criar a interface de mudar o nome
+function criarInterfaceMudarNome() {
+    // 1. Encontre o elemento do nome (substitua o seletor pelo que descobrir no passo abaixo)
+    const elementoNome = document.querySelector('#nome-usuario'); 
+
+    if (!elementoNome) {
+        console.error("Não encontrei o elemento do nome ainda. Tentando novamente...");
+        return;
+    }
+
+    // 2. Cria o campo de texto (Input)
+    const meuInput = document.createElement('input');
+    meuInput.type = 'text';
+    meuInput.placeholder = 'Novo nome...';
+    meuInput.style.marginRight = '10px'; // Um espacinho básico
+
+    // 3. Cria o Botão
+    const meuBotao = document.createElement('button');
+    meuBotao.innerText = 'Mudar Nome';
+
+    // 4. Cria um container para organizar os dois
+    const container = document.createElement('div');
+    container.style.marginTop = '10px';
+    container.appendChild(meuInput);
+    container.appendChild(meuBotao);
+
+    // 5. Insere o container logo após o elemento do nome na tela
+    elementoNome.insertAdjacentElement('afterend', container);
+
+    // 6. Lógica do clique do botão
+    meuBotao.addEventListener('click', () => {
+        const novoNome = meuInput.value.trim();
+        if (novoNome !== "") {
+            elementoNome.innerText = novoNome; // Altera na tela
+            localStorage.setItem('usuarioNome', novoNome); // Salva no navegador
+            meuInput.value = "";
+        }
+    });
+
+    // 7. Carrega o nome caso já exista algo salvo no LocalStorage
+    const nomeSalvo = localStorage.getItem('usuarioNome');
+    if (nomeSalvo) {
+        elementoNome.innerText = nomeSalvo;
+    }
+}
+
+// Executa a função. Se o app demorar para carregar, usamos um pequeno delay
+setTimeout(criarInterfaceMudarNome, 1000); 
+
 
   /* ================= Inicialização ================= */
   (async function iniciar() {
