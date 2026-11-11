@@ -2011,7 +2011,7 @@ function criarInterfaceMudarNome() {
     btnAbrir.innerText = '⚙️ Mudar Nome';
     btnAbrir.style.cursor = 'pointer';
 
-    const painelEdicao = document.createElement('span');
+    const painelEdicao = document.createElement('span'); 
     painelEdicao.style.display = 'none'; // Começa escondido
     painelEdicao.style.marginLeft = '10px';
 
