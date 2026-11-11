@@ -1955,165 +1955,158 @@
       location.reload();
     });
   }
-// CONFIGURAÇÕES CONFIGURADAS CONFORME SOLICITADO
-const SELETOR_DO_NOME = '#nome-usuario'; // Seletor solicitado
-const TABELA_BANCO = 'perfis';          // Tabela solicitada
+/* ================= Componente: Mudar Nome via Perfil ================= */
 
-// Guarda o ID do usuário logado
-let idUsuarioLogado = null; 
+// Configuração baseada no ecossistema do seu app
+const SELETOR_DO_NOME = '#nome-usuario'; 
+const TABELA_BANCO = 'perfis';          
+let idUsuarioLogadoCache = null;
 
-// 1. FUNÇÃO PARA BUSCAR O NOME NO SUPABASE E EXIBIR NA TELA
-async function carregarNomeDoBanco() {
-    // Procura a variável do Supabase nas principais formas que ela pode existir
-    const client = typeof supabase !== 'undefined' ? supabase : (typeof supabaseClient !== 'undefined' ? supabaseClient : null);
+// 1. FUNÇÃO QUE RASTREIA O USUÁRIO LOGADO E ATUALIZA O NOME DO BANCO
+async function sincronizarNomeSupabase() {
+  // Verifica se a variável interna 'sb' do seu app está pronta
+  if (typeof sb === 'undefined' || !sb.auth) {
+    setTimeout(sincronizarNomeSupabase, 1000);
+    return;
+  }
 
-    if (!client) {
-        console.warn("Supabase não encontrado nas variáveis globais ainda. Tentando novamente...");
-        setTimeout(carregarNomeDoBanco, 1000);
-        return;
+  try {
+    // Captura o usuário autenticado na instância 'sb'
+    const { data } = await sb.auth.getUser();
+    const user = data?.user;
+
+    if (!user) {
+      setTimeout(sincronizarNomeSupabase, 2000);
+      return;
     }
 
-    try {
-        let user = null;
-        
-        // Proteção para identificar o método de login sem quebrar o código
-        if (client.auth && typeof client.auth.getUser === 'function') {
-            const { data } = await client.auth.getUser();
-            user = data?.user;
-        } else if (client.auth && typeof client.auth.user === 'function') {
-            user = client.auth.user(); 
-        } else if (client.auth && typeof client.auth.session === 'function') {
-            const session = client.auth.session();
-            user = session?.user;
-        }
+    idUsuarioLogadoCache = user.id;
 
-        if (!user) {
-            console.warn("Nenhum usuário autenticado encontrado no Supabase.");
-            return;
-        }
+    // Busca o nome salvo na tabela 'perfis'
+    const { data: profileData, error: dbError } = await sb
+      .from(TABELA_BANCO)
+      .select('nome')
+      .eq('id', idUsuarioLogadoCache)
+      .maybeSingle();
 
-        idUsuarioLogado = user.id; // Salva o ID do usuário logado
-
-        // Puxa os dados da tabela 'perfis'
-        const { data: profileData, error: dbError } = await client
-            .from(TABELA_BANCO)
-            .select('nome')
-            .eq('id', idUsuarioLogado)
-            .maybeSingle();
-
-        if (dbError) {
-            console.error("Erro ao buscar nome no banco:", dbError.message);
-            return;
-        }
-
-        if (profileData && profileData.nome) {
-            atualizarTextoNaTela(profileData.nome);
-        }
-    } catch (err) {
-        console.error("Erro ao processar autenticação/banco:", err);
+    if (dbError) {
+      console.error("Erro ao ler tabela perfis:", dbError.message);
+      return;
     }
-}
 
-// Auxiliar para mudar o texto na tela de forma segura
-function atualizarTextoNaTela(nome) {
-    const elementoNome = document.querySelector(SELETOR_DO_NOME);
-    if (elementoNome && elementoNome.innerText !== nome) {
-        elementoNome.innerText = nome;
+    if (profileData && profileData.nome) {
+      atualizarTextoInterface(profileData.nome);
     }
+  } catch (err) {
+    console.error("Erro na sincronização de perfil:", err);
+  }
 }
 
-// 2. FUNÇÃO QUE CRIA A INTERFACE DO BOTÃO RETRÁTIL
-function criarInterfaceMudarNome() {
-    // Se o botão já foi criado nesta página, não faz nada
-    if (document.getElementById('container-mudar-nome')) return;
-
-    // Busca o elemento na tela
-    const elementoNome = document.querySelector(SELETOR_DO_NOME);
-    if (!elementoNome) return;
-
-    // Criando o container do botão
-    const container = document.createElement('div');
-    container.id = 'container-mudar-nome';
-    container.style.marginTop = '10px';
-    container.style.display = 'inline-block';
-
-    // Criando o botão principal "Mudar Nome"
-    const btnAbrir = document.createElement('button');
-    btnAbrir.innerText = '⚙️ Mudar Nome';
-    btnAbrir.style.cursor = 'pointer';
-
-    // Criando a caixinha com o Input e o Botão Salvar (Inicia escondida)
-    const painelEdicao = document.createElement('span');
-    painelEdicao.style.display = 'none'; 
-    painelEdicao.style.marginLeft = '10px';
-
-    const meuInput = document.createElement('input');
-    meuInput.type = 'text';
-    meuInput.placeholder = 'Novo nome...';
-    meuInput.style.marginRight = '5px';
-
-    const btnSalvar = document.createElement('button');
-    btnSalvar.innerText = 'Salvar';
-
-    // Montando a estrutura
-    painelEdicao.appendChild(meuInput);
-    painelEdicao.appendChild(btnSalvar);
-    container.appendChild(btnAbrir);
-    container.appendChild(painelEdicao);
-
-    // Insere o botão logo abaixo/ao lado do nome do usuário
-    elementoNome.insertAdjacentElement('afterend', container);
-
-    // Abre e fecha o painel de input ao clicar em "Mudar Nome"
-    btnAbrir.addEventListener('click', () => {
-        painelEdicao.style.display = painelEdicao.style.display === 'none' ? 'inline' : 'none';
-        if (painelEdicao.style.display === 'inline') meuInput.focus();
-    });
-
-    // Envia o novo nome para o Supabase
-    btnSalvar.addEventListener('click', async () => {
-        const novoNome = meuInput.value.trim();
-        const client = typeof supabase !== 'undefined' ? supabase : (typeof supabaseClient !== 'undefined' ? supabaseClient : null);
-        
-        if (novoNome === "" || !idUsuarioLogado || !client) {
-            alert("Digite um nome válido ou aguarde a conexão com o banco.");
-            return;
-        }
-
-        btnSalvar.innerText = "Salvando...";
-        btnSalvar.disabled = true;
-
-        // Atualiza a coluna 'nome' na tabela 'perfis' para o ID logado
-        const { error } = await client
-            .from(TABELA_BANCO)
-            .update({ nome: novoNome })
-            .eq('id', idUsuarioLogado);
-
-        if (error) {
-            alert("Erro ao salvar no banco: " + error.message);
-        } else {
-            atualizarTextoNaTela(novoNome); // Atualiza na tela imediatamente
-            painelEdicao.style.display = 'none';
-            meuInput.value = "";
-        }
-
-        btnSalvar.innerText = "Salvar";
-        btnSalvar.disabled = false;
-    });
+// Atualiza o texto na tela de forma reativa
+function atualizarTextoInterface(nome) {
+  const el = $(SELETOR_DO_NOME); // Usa o seu utilitário '$' padrão do app
+  if (el && el.innerText !== nome) {
+    el.innerText = nome;
+  }
 }
 
-// 3. MONITORAMENTO DINÂMICO DA TELA
-// Verifica de meio em meio segundo se mudou de página para recriar o botão e manter o nome
+// 2. FUNÇÃO QUE INJETA O BOTÃO RETRÁTIL NA TELA
+function injetarBotaoMudarNome() {
+  if ($('#container-mudar-nome')) return; // Evita duplicar o botão
+
+  const elementoNome = $(SELETOR_DO_NOME);
+  if (!elementoNome) return; // Só age se o elemento estiver desenhado na tela
+
+  // Criação dos elementos organizados
+  const container = document.createElement('div');
+  container.id = 'container-mudar-nome';
+  container.style.marginTop = '10px';
+  container.style.display = 'inline-block';
+
+  const btnAbrir = document.createElement('button');
+  btnAbrir.innerText = '⚙️ Mudar Nome';
+  btnAbrir.style.cursor = 'pointer';
+  btnAbrir.style.padding = '4px 8px';
+  btnAbrir.style.fontSize = '13px';
+
+  const painelEdicao = document.createElement('span');
+  painelEdicao.style.display = 'none'; // Começa oculto como solicitado
+  painelEdicao.style.marginLeft = '10px';
+
+  const meuInput = document.createElement('input');
+  meuInput.type = 'text';
+  meuInput.placeholder = 'Novo nome...';
+  meuInput.style.padding = '3px';
+  meuInput.style.marginRight = '5px';
+
+  const btnSalvar = document.createElement('button');
+  btnSalvar.innerText = 'Salvar';
+  btnSalvar.style.padding = '4px 8px';
+
+  // Montagem da estrutura
+  painelEdicao.appendChild(meuInput);
+  painelEdicao.appendChild(btnSalvar);
+  container.appendChild(btnAbrir);
+  container.appendChild(painelEdicao);
+
+  // Insere dinamicamente ao lado/abaixo do nome
+  elementoNome.insertAdjacentElement('afterend', container);
+
+  // Ação para exibir o campo somente quando apertar "Mudar Nome"
+  btnAbrir.addEventListener('click', () => {
+    if (painelEdicao.style.display === 'none') {
+      painelEdicao.style.display = 'inline';
+      meuInput.focus();
+    } else {
+      painelEdicao.style.display = 'none';
+    }
+  });
+
+  // Gravação de dados reativa no Supabase 'sb'
+  btnSalvar.addEventListener('click', async () => {
+    const novoNome = meuInput.value.trim();
+    if (novoNome === "" || !idUsuarioLogadoCache || typeof sb === 'undefined') {
+      toast("Digite um nome válido ou aguarde sincronização.", null, true); // Usa o seu 'toast' nativo
+      return;
+    }
+
+    btnSalvar.innerText = "Salvando...";
+    btnSalvar.disabled = true;
+
+    // Executa a atualização na tabela 'perfis'
+    const { error } = await sb
+      .from(TABELA_BANCO)
+      .update({ nome: novoNome })
+      .eq('id', idUsuarioLogadoCache);
+
+    if (error) {
+      toast("Erro ao salvar no Supabase: " + error.message, null, true);
+    } else {
+      atualizarTextoInterface(novoNome);
+      localStorage.setItem('nome_reserva_local', novoNome); // Cache local de contingência
+      painelEdicao.style.display = 'none';
+      meuInput.value = "";
+      toast("Nome alterado com sucesso!");
+    }
+
+    btnSalvar.innerText = "Salvar";
+    btnSalvar.disabled = false;
+  });
+}
+
+// 3. MONITOR DINÂMICO DE TELA (Roda em segundo plano)
 setInterval(() => {
-    const elementoNome = document.querySelector(SELETOR_DO_NOME);
-    if (elementoNome && idUsuarioLogado) {
-        criarInterfaceMudarNome();
-    }
+  injetarBotaoMudarNome();
+
+  // Garante a reatividade visual caso o roteador do seu app limpe a tela
+  const nomeReserva = localStorage.getItem('nome_reserva_local');
+  if (nomeReserva) {
+    atualizarTextoInterface(nomeReserva);
+  }
 }, 500);
 
-// Inicializa a primeira busca assim que o arquivo carrega
-carregarNomeDoBanco();
-
+// Inicia o processo automático de verificação
+sincronizarNomeSupabase();
 
   /* ================= Inicialização ================= */
   (async function iniciar() {
