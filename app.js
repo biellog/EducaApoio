@@ -1959,31 +1959,47 @@
 const SELETOR_DO_NOME = '#nome-usuario'; // O seletor do elemento que mostra o nome na tela
 const TABELA_BANCO = 'perfis';         // O nome da sua tabela no Supabase
 
-// Guarda o ID do usuário logado (Você precisa pegar isso do sistema de login do Supabase)
+// Guarda o ID do usuário logado
 let idUsuarioLogado = null; 
 
 // 1. FUNÇÃO PARA BUSCAR O NOME NO SUPABASE E EXIBIR NA TELA
 async function carregarNomeDoBanco() {
-    // Pega o usuário que está logado no momento
-    const { data: { user } } = await supabase.auth.getUser();
-    
-    if (!user) return;
-    idUsuarioLogado = user.id; // Guarda o ID para usar na atualização
-
-    // Busca a linha desse usuário na tabela
-    const { data, error } = await supabase
-        .from(TABELA_BANCO)
-        .select('nome')
-        .eq('id', idUsuarioLogado)
-        .single();
-
-    if (error) {
-        console.error("Erro ao buscar nome:", error.message);
+    // CORREÇÃO: Evita o erro caso o objeto 'supabase' ou 'supabase.auth' ainda não existam na página
+    if (typeof supabase === 'undefined' || !supabase.auth) {
+        console.warn("Supabase ainda não foi inicializado. Tentando novamente em breve...");
+        setTimeout(carregarNomeDoBanco, 1000); // Tenta de novo em 1 segundo
         return;
     }
 
-    if (data && data.nome) {
-        atualizarTextoNaTela(data.nome);
+    try {
+        // Pega o usuário que está logado no momento
+        const { data, error: authError } = await supabase.auth.getUser();
+        
+        if (authError || !data || !data.user) {
+            console.warn("Nenhum usuário logado no momento.");
+            return;
+        }
+
+        const user = data.user;
+        idUsuarioLogado = user.id; // Guarda o ID para usar na atualização
+
+        // Busca a linha desse usuário na tabela
+        const { data: profileData, error: dbError } = await supabase
+            .from(TABELA_BANCO)
+            .select('nome')
+            .eq('id', idUsuarioLogado)
+            .maybeSingle(); // Usando maybeSingle para evitar erros se a linha não existir ainda
+
+        if (dbError) {
+            console.error("Erro ao buscar nome no banco:", dbError.message);
+            return;
+        }
+
+        if (profileData && profileData.nome) {
+            atualizarTextoNaTela(profileData.nome);
+        }
+    } catch (err) {
+        console.error("Erro inesperado na autenticação:", err);
     }
 }
 
@@ -2011,7 +2027,7 @@ function criarInterfaceMudarNome() {
     btnAbrir.innerText = '⚙️ Mudar Nome';
     btnAbrir.style.cursor = 'pointer';
 
-    const painelEdicao = document.createElement('span'); 
+    const painelEdicao = document.createElement('span');
     painelEdicao.style.display = 'none'; // Começa escondido
     painelEdicao.style.marginLeft = '10px';
 
@@ -2068,9 +2084,7 @@ function criarInterfaceMudarNome() {
 }
 
 // 3. SEGREDO PARA APLICATIVOS DINÂMICOS (Fica vigiando a tela)
-// Garante que se mudar de página, o botão recrie e o nome continue atualizado
 setInterval(() => {
-    // Se já sabemos o nome atual, só garante que ele fique na tela sem chamar o banco toda hora
     const elementoNome = document.querySelector(SELETOR_DO_NOME);
     if (elementoNome && idUsuarioLogado) {
         criarInterfaceMudarNome();
@@ -2079,6 +2093,7 @@ setInterval(() => {
 
 // Inicializa buscando os dados do banco assim que o script roda
 carregarNomeDoBanco();
+
 
   /* ================= Inicialização ================= */
   (async function iniciar() {
