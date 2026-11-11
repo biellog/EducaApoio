@@ -1955,55 +1955,130 @@
       location.reload();
     });
   }
-  // Função para criar a interface de mudar o nome
-function criarInterfaceMudarNome() {
-    // 1. Encontre o elemento do nome (substitua o seletor pelo que descobrir no passo abaixo)
-    const elementoNome = document.querySelector('#nome-usuario'); 
+// CONFIGURAÇÕES: Altere de acordo com o seu projeto
+const SELETOR_DO_NOME = '#nome-usuario'; // O seletor do elemento que mostra o nome na tela
+const TABELA_BANCO = 'perfis';         // O nome da sua tabela no Supabase
 
-    if (!elementoNome) {
-        console.error("Não encontrei o elemento do nome ainda. Tentando novamente...");
+// Guarda o ID do usuário logado (Você precisa pegar isso do sistema de login do Supabase)
+let idUsuarioLogado = null; 
+
+// 1. FUNÇÃO PARA BUSCAR O NOME NO SUPABASE E EXIBIR NA TELA
+async function carregarNomeDoBanco() {
+    // Pega o usuário que está logado no momento
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) return;
+    idUsuarioLogado = user.id; // Guarda o ID para usar na atualização
+
+    // Busca a linha desse usuário na tabela
+    const { data, error } = await supabase
+        .from(TABELA_BANCO)
+        .select('nome')
+        .eq('id', idUsuarioLogado)
+        .single();
+
+    if (error) {
+        console.error("Erro ao buscar nome:", error.message);
         return;
     }
 
-    // 2. Cria o campo de texto (Input)
-    const meuInput = document.createElement('input');
-    meuInput.type = 'text';
-    meuInput.placeholder = 'Novo nome...';
-    meuInput.style.marginRight = '10px'; // Um espacinho básico
-
-    // 3. Cria o Botão
-    const meuBotao = document.createElement('button');
-    meuBotao.innerText = 'Mudar Nome';
-
-    // 4. Cria um container para organizar os dois
-    const container = document.createElement('div');
-    container.style.marginTop = '10px';
-    container.appendChild(meuInput);
-    container.appendChild(meuBotao);
-
-    // 5. Insere o container logo após o elemento do nome na tela
-    elementoNome.insertAdjacentElement('afterend', container);
-
-    // 6. Lógica do clique do botão
-    meuBotao.addEventListener('click', () => {
-        const novoNome = meuInput.value.trim();
-        if (novoNome !== "") {
-            elementoNome.innerText = novoNome; // Altera na tela
-            localStorage.setItem('usuarioNome', novoNome); // Salva no navegador
-            meuInput.value = "";
-        }
-    });
-
-    // 7. Carrega o nome caso já exista algo salvo no LocalStorage
-    const nomeSalvo = localStorage.getItem('usuarioNome');
-    if (nomeSalvo) {
-        elementoNome.innerText = nomeSalvo;
+    if (data && data.nome) {
+        atualizarTextoNaTela(data.nome);
     }
 }
 
-// Executa a função. Se o app demorar para carregar, usamos um pequeno delay
-setTimeout(criarInterfaceMudarNome, 1000); 
+// Auxiliar para mudar o texto na tela de forma segura
+function atualizarTextoNaTela(nome) {
+    const elementoNome = document.querySelector(SELETOR_DO_NOME);
+    if (elementoNome && elementoNome.innerText !== nome) {
+        elementoNome.innerText = nome;
+    }
+}
 
+// 2. FUNÇÃO QUE CRIA A INTERFACE DO BOTÃO RETRÁTIL
+function criarInterfaceMudarNome() {
+    if (document.getElementById('container-mudar-nome')) return;
+
+    const elementoNome = document.querySelector(SELETOR_DO_NOME);
+    if (!elementoNome) return;
+
+    const container = document.createElement('div');
+    container.id = 'container-mudar-nome';
+    container.style.marginTop = '10px';
+    container.style.display = 'inline-block';
+
+    const btnAbrir = document.createElement('button');
+    btnAbrir.innerText = '⚙️ Mudar Nome';
+    btnAbrir.style.cursor = 'pointer';
+
+    const painelEdicao = document.createElement('span');
+    painelEdicao.style.display = 'none'; // Começa escondido
+    painelEdicao.style.marginLeft = '10px';
+
+    const meuInput = document.createElement('input');
+    meuInput.type = 'text';
+    meuInput.placeholder = 'Novo nome...';
+    meuInput.style.marginRight = '5px';
+
+    const btnSalvar = document.createElement('button');
+    btnSalvar.innerText = 'Salvar';
+
+    painelEdicao.appendChild(meuInput);
+    painelEdicao.appendChild(btnSalvar);
+    container.appendChild(btnAbrir);
+    container.appendChild(painelEdicao);
+
+    elementoNome.insertAdjacentElement('afterend', container);
+
+    // Ação para abrir/fechar o painel ao clicar em "Mudar Nome"
+    btnAbrir.addEventListener('click', () => {
+        painelEdicao.style.display = painelEdicao.style.display === 'none' ? 'inline' : 'none';
+        if (painelEdicao.style.display === 'inline') meuInput.focus();
+    });
+
+    // Ação para salvar no Supabase
+    btnSalvar.addEventListener('click', async () => {
+        const novoNome = meuInput.value.trim();
+        
+        if (novoNome === "" || !idUsuarioLogado) {
+            alert("Digite um nome válido ou verifique se está logado.");
+            return;
+        }
+
+        btnSalvar.innerText = "Salvando...";
+        btnSalvar.disabled = true;
+
+        // ATUALIZA NO SUPABASE
+        const { error } = await supabase
+            .from(TABELA_BANCO)
+            .update({ nome: novoNome })
+            .eq('id', idUsuarioLogado);
+
+        if (error) {
+            alert("Erro ao salvar no banco: " + error.message);
+        } else {
+            atualizarTextoNaTela(novoNome); // Muda na tela na hora
+            painelEdicao.style.display = 'none';
+            meuInput.value = "";
+        }
+
+        btnSalvar.innerText = "Salvar";
+        btnSalvar.disabled = false;
+    });
+}
+
+// 3. SEGREDO PARA APLICATIVOS DINÂMICOS (Fica vigiando a tela)
+// Garante que se mudar de página, o botão recrie e o nome continue atualizado
+setInterval(() => {
+    // Se já sabemos o nome atual, só garante que ele fique na tela sem chamar o banco toda hora
+    const elementoNome = document.querySelector(SELETOR_DO_NOME);
+    if (elementoNome && idUsuarioLogado) {
+        criarInterfaceMudarNome();
+    }
+}, 500);
+
+// Inicializa buscando os dados do banco assim que o script roda
+carregarNomeDoBanco();
 
   /* ================= Inicialização ================= */
   (async function iniciar() {
