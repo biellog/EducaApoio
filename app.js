@@ -1955,40 +1955,51 @@
       location.reload();
     });
   }
-// CONFIGURAÇÕES: Altere de acordo com o seu projeto
-const SELETOR_DO_NOME = '#nome-usuario'; // O seletor do elemento que mostra o nome na tela
-const TABELA_BANCO = 'perfis';         // O nome da sua tabela no Supabase
+// CONFIGURAÇÕES CONFIGURADAS CONFORME SOLICITADO
+const SELETOR_DO_NOME = '#nome-usuario'; // Seletor solicitado
+const TABELA_BANCO = 'perfis';          // Tabela solicitada
 
 // Guarda o ID do usuário logado
 let idUsuarioLogado = null; 
 
 // 1. FUNÇÃO PARA BUSCAR O NOME NO SUPABASE E EXIBIR NA TELA
 async function carregarNomeDoBanco() {
-    // CORREÇÃO: Evita o erro caso o objeto 'supabase' ou 'supabase.auth' ainda não existam na página
-    if (typeof supabase === 'undefined' || !supabase.auth) {
-        console.warn("Supabase ainda não foi inicializado. Tentando novamente em breve...");
-        setTimeout(carregarNomeDoBanco, 1000); // Tenta de novo em 1 segundo
+    // Procura a variável do Supabase nas principais formas que ela pode existir
+    const client = typeof supabase !== 'undefined' ? supabase : (typeof supabaseClient !== 'undefined' ? supabaseClient : null);
+
+    if (!client) {
+        console.warn("Supabase não encontrado nas variáveis globais ainda. Tentando novamente...");
+        setTimeout(carregarNomeDoBanco, 1000);
         return;
     }
 
     try {
-        // Pega o usuário que está logado no momento
-        const { data, error: authError } = await supabase.auth.getUser();
+        let user = null;
         
-        if (authError || !data || !data.user) {
-            console.warn("Nenhum usuário logado no momento.");
+        // Proteção para identificar o método de login sem quebrar o código
+        if (client.auth && typeof client.auth.getUser === 'function') {
+            const { data } = await client.auth.getUser();
+            user = data?.user;
+        } else if (client.auth && typeof client.auth.user === 'function') {
+            user = client.auth.user(); 
+        } else if (client.auth && typeof client.auth.session === 'function') {
+            const session = client.auth.session();
+            user = session?.user;
+        }
+
+        if (!user) {
+            console.warn("Nenhum usuário autenticado encontrado no Supabase.");
             return;
         }
 
-        const user = data.user;
-        idUsuarioLogado = user.id; // Guarda o ID para usar na atualização
+        idUsuarioLogado = user.id; // Salva o ID do usuário logado
 
-        // Busca a linha desse usuário na tabela
-        const { data: profileData, error: dbError } = await supabase
+        // Puxa os dados da tabela 'perfis'
+        const { data: profileData, error: dbError } = await client
             .from(TABELA_BANCO)
             .select('nome')
             .eq('id', idUsuarioLogado)
-            .maybeSingle(); // Usando maybeSingle para evitar erros se a linha não existir ainda
+            .maybeSingle();
 
         if (dbError) {
             console.error("Erro ao buscar nome no banco:", dbError.message);
@@ -1999,7 +2010,7 @@ async function carregarNomeDoBanco() {
             atualizarTextoNaTela(profileData.nome);
         }
     } catch (err) {
-        console.error("Erro inesperado na autenticação:", err);
+        console.error("Erro ao processar autenticação/banco:", err);
     }
 }
 
@@ -2013,22 +2024,27 @@ function atualizarTextoNaTela(nome) {
 
 // 2. FUNÇÃO QUE CRIA A INTERFACE DO BOTÃO RETRÁTIL
 function criarInterfaceMudarNome() {
+    // Se o botão já foi criado nesta página, não faz nada
     if (document.getElementById('container-mudar-nome')) return;
 
+    // Busca o elemento na tela
     const elementoNome = document.querySelector(SELETOR_DO_NOME);
     if (!elementoNome) return;
 
+    // Criando o container do botão
     const container = document.createElement('div');
     container.id = 'container-mudar-nome';
     container.style.marginTop = '10px';
     container.style.display = 'inline-block';
 
+    // Criando o botão principal "Mudar Nome"
     const btnAbrir = document.createElement('button');
     btnAbrir.innerText = '⚙️ Mudar Nome';
     btnAbrir.style.cursor = 'pointer';
 
+    // Criando a caixinha com o Input e o Botão Salvar (Inicia escondida)
     const painelEdicao = document.createElement('span');
-    painelEdicao.style.display = 'none'; // Começa escondido
+    painelEdicao.style.display = 'none'; 
     painelEdicao.style.marginLeft = '10px';
 
     const meuInput = document.createElement('input');
@@ -2039,33 +2055,36 @@ function criarInterfaceMudarNome() {
     const btnSalvar = document.createElement('button');
     btnSalvar.innerText = 'Salvar';
 
+    // Montando a estrutura
     painelEdicao.appendChild(meuInput);
     painelEdicao.appendChild(btnSalvar);
     container.appendChild(btnAbrir);
     container.appendChild(painelEdicao);
 
+    // Insere o botão logo abaixo/ao lado do nome do usuário
     elementoNome.insertAdjacentElement('afterend', container);
 
-    // Ação para abrir/fechar o painel ao clicar em "Mudar Nome"
+    // Abre e fecha o painel de input ao clicar em "Mudar Nome"
     btnAbrir.addEventListener('click', () => {
         painelEdicao.style.display = painelEdicao.style.display === 'none' ? 'inline' : 'none';
         if (painelEdicao.style.display === 'inline') meuInput.focus();
     });
 
-    // Ação para salvar no Supabase
+    // Envia o novo nome para o Supabase
     btnSalvar.addEventListener('click', async () => {
         const novoNome = meuInput.value.trim();
+        const client = typeof supabase !== 'undefined' ? supabase : (typeof supabaseClient !== 'undefined' ? supabaseClient : null);
         
-        if (novoNome === "" || !idUsuarioLogado) {
-            alert("Digite um nome válido ou verifique se está logado.");
+        if (novoNome === "" || !idUsuarioLogado || !client) {
+            alert("Digite um nome válido ou aguarde a conexão com o banco.");
             return;
         }
 
         btnSalvar.innerText = "Salvando...";
         btnSalvar.disabled = true;
 
-        // ATUALIZA NO SUPABASE
-        const { error } = await supabase
+        // Atualiza a coluna 'nome' na tabela 'perfis' para o ID logado
+        const { error } = await client
             .from(TABELA_BANCO)
             .update({ nome: novoNome })
             .eq('id', idUsuarioLogado);
@@ -2073,7 +2092,7 @@ function criarInterfaceMudarNome() {
         if (error) {
             alert("Erro ao salvar no banco: " + error.message);
         } else {
-            atualizarTextoNaTela(novoNome); // Muda na tela na hora
+            atualizarTextoNaTela(novoNome); // Atualiza na tela imediatamente
             painelEdicao.style.display = 'none';
             meuInput.value = "";
         }
@@ -2083,7 +2102,8 @@ function criarInterfaceMudarNome() {
     });
 }
 
-// 3. SEGREDO PARA APLICATIVOS DINÂMICOS (Fica vigiando a tela)
+// 3. MONITORAMENTO DINÂMICO DA TELA
+// Verifica de meio em meio segundo se mudou de página para recriar o botão e manter o nome
 setInterval(() => {
     const elementoNome = document.querySelector(SELETOR_DO_NOME);
     if (elementoNome && idUsuarioLogado) {
@@ -2091,7 +2111,7 @@ setInterval(() => {
     }
 }, 500);
 
-// Inicializa buscando os dados do banco assim que o script roda
+// Inicializa a primeira busca assim que o arquivo carrega
 carregarNomeDoBanco();
 
 
