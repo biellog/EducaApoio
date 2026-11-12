@@ -245,6 +245,8 @@
     if (!meu || !meu.funcao || !meu.ativo) return mostrarEtapa('aguardando');
     eu = meu;
     await carregarCategorias();
+    const ba = await sb.rpc('pode_busca_ativa');
+    eu.buscaAtiva = !ba.error && ba.data === true;
     if (veioDoLogin) { auditar('LOGIN', 'usuario', eu.id); veioDoLogin = false; }
     iniciarApp();
   }
@@ -338,6 +340,7 @@
       ['#/painel', 'Painel', pode('painel')],
       ['#/relatorios', 'Relatórios', pode('relatorios')],
       ['#/turmas', 'Turmas', pode('turmas')],
+      ['#/busca-ativa', 'Busca ativa', eu.buscaAtiva],
       ['#/usuarios', 'Usuários', ehDirecao()],
       ['#/funcoes', 'Funções de acesso', ehDirecao()],
       ['#/configuracoes', 'Configurações', pode('configuracoes')],
@@ -469,6 +472,7 @@
         case 'configuracoes': return await telaConfiguracoes();
         case 'limpeza-anual': return await telaLimpeza();
         case 'turmas': return await telaTurmas();
+        case 'busca-ativa': return params.caso ? await telaCasoBusca(Number(params.caso)) : await telaBuscaAtiva(params);
         case 'auditoria': return await telaAuditoria(params);
         case 'conta': return await telaConta(params);
         default: return await telaLista(params);
@@ -613,6 +617,7 @@
         ${atalho('#/ocorrencias', pode('ver_todas') ? 'Ver ocorrências' : 'Minhas ocorrências', 'Procurar pelo nome do estudante ou pela turma.')}
         ${pode('painel') ? atalho('#/painel', 'Painel', 'Números por mês, turma e tipo.') : ''}
         ${pode('relatorios') ? atalho('#/relatorios', 'Relatórios', 'Gerar PDF para imprimir ou enviar.') : ''}
+        ${eu.buscaAtiva ? atalho('#/busca-ativa', 'Busca ativa', 'Acompanhar estudantes faltosos e registrar contatos com a família.') : ''}
       </div>
       <div class="numeros numeros-2">
         <a class="numero" href="#/ocorrencias?status=ABERTA"><b style="color:var(--vermelho)">${abertas}</b><span>abertas${pode('ver_todas') ? '' : ' (suas)'}</span></a>
@@ -1241,14 +1246,22 @@
   /* ================= Usuários (Direção) ================= */
   async function telaUsuarios() {
     if (!ehDirecao()) throw new Error('Somente a Direção gerencia usuários.');
-    const [lista, funcoes] = await Promise.all([
+    const [lista, funcoes, autorizados] = await Promise.all([
       sb.rpc('listar_usuarios').then(ok),
+      sb.from('busca_ativa_autorizados').select('usuario_id').then((r) => (r.error ? null : r.data.map((a) => a.usuario_id))),
       sb.from('funcoes').select('id, nome, direcao').order('direcao', { ascending: false }).order('nome').then(ok),
     ]);
     const opcoesFuncao = (sel, vazio) =>
       (vazio ? `<option value="">${esc(vazio)}</option>` : '') +
       funcoes.map((f) => `<option value="${f.id}" ${f.id === sel ? 'selected' : ''}>${esc(f.nome)}</option>`).join('');
     const pendentes = lista.filter((u) => !u.funcao_id).length;
+    const idsDirecao = new Set(funcoes.filter((f) => f.direcao).map((f) => f.id));
+    const celulaBusca = (u) => {
+      if (idsDirecao.has(u.funcao_id)) return '<span class="muted">Sempre (Direção)</span>';
+      if (autorizados === null) return '<span class="muted">-</span>';
+      const tem = autorizados.includes(u.id);
+      return `<button class="btn ${tem ? '' : 'sec'} peq" type="button" data-busca="${tem ? 0 : 1}">${tem ? 'Permitida' : 'Permitir'}</button>`;
+    };
 
     conteudo.innerHTML = `
       <div class="cabecalho-pagina"><div><h1>Usuários</h1><p class="muted">Cada pessoa entra com o próprio e-mail e vê o que a função dela permite. As funções são definidas em <a href="#/funcoes">Funções de acesso</a>.</p></div></div>
@@ -1266,12 +1279,13 @@
       <h2>Equipe</h2>
       ${pendentes ? `<p class="atencao">${pendentes} pessoa(s) aguardando liberação: escolha uma função para liberar o acesso.</p>` : ''}
       <div class="tabela-wrap"><table>
-        <thead><tr><th>Nome</th><th>E-mail</th><th>Função</th><th>Situação</th><th>Ações</th></tr></thead>
+        <thead><tr><th>Nome</th><th>E-mail</th><th>Função</th><th>Busca ativa</th><th>Situação</th><th>Ações</th></tr></thead>
         <tbody>${lista.map((u) => `
           <tr data-id="${u.id}" data-nome="${esc(u.nome)}">
             <td>${esc(u.nome)}</td>
             <td>${esc(u.email)}</td>
             <td><select class="u-funcao" aria-label="Função de ${esc(u.nome)}" ${u.id === eu.id ? 'disabled' : ''}>${opcoesFuncao(u.funcao_id, u.funcao_id ? null : 'Aguardando liberação')}</select></td>
+            <td>${celulaBusca(u)}</td>
             <td>${u.ativo ? 'Ativo' : '<span class="atencao">Desativado</span>'}</td>
             <td>${u.id !== eu.id ? `<button class="btn ${u.ativo ? 'perigo' : 'sec'} peq" data-acao="ativo" data-valor="${u.ativo ? 0 : 1}">${u.ativo ? 'Desativar' : 'Reativar'}</button>` : ''}</td>
           </tr>`).join('')}</tbody></table></div>`;
@@ -1307,6 +1321,19 @@
           toast(`Função de ${nome} salva.`);
           telaUsuarios();
         } catch (err) { toast(erroPT(err)); telaUsuarios(); }
+      });
+      const bb = $('button[data-busca]', tr);
+      if (bb) bb.addEventListener('click', async () => {
+        const liberar = bb.dataset.busca === '1';
+        if (!confirm(liberar
+          ? `Permitir que ${nome} faça a busca ativa? A pessoa verá os estudantes com faltas de todas as turmas.`
+          : `Tirar o acesso de ${nome} à busca ativa?`)) return;
+        try {
+          if (liberar) ok(await sb.from('busca_ativa_autorizados').insert({ usuario_id: id }));
+          else ok(await sb.from('busca_ativa_autorizados').delete().eq('usuario_id', id));
+          toast(liberar ? `${nome} agora pode fazer a busca ativa (vale ao atualizar a página).` : `${nome} não tem mais acesso à busca ativa.`);
+          telaUsuarios();
+        } catch (err) { toast(erroPT(err)); }
       });
       const b = $('button[data-acao="ativo"]', tr);
       if (b) b.addEventListener('click', async () => {
@@ -1674,6 +1701,202 @@
     }));
   }
 
+  /* ================= Busca ativa (pessoas liberadas pela Direção) ================= */
+  const SITUACAO_BUSCA = {
+    EM_BUSCA: 'Em busca', CONTATO_FEITO: 'Contato feito', RETORNOU: 'Retornou às aulas',
+    ENCAMINHADO: 'Encaminhado (Conselho Tutelar / rede)', ENCERRADO: 'Encerrado',
+  };
+  const FORMA_CONTATO = { TELEFONE: 'Telefone', WHATSAPP: 'WhatsApp', VISITA: 'Visita à casa', BILHETE: 'Bilhete / recado', EMAIL: 'E-mail', OUTRO: 'Outro' };
+  const RESULTADO_CONTATO = {
+    SEM_SUCESSO: 'Não consegui falar', CONVERSOU: 'Conversei com a família',
+    RETORNO_COMBINADO: 'Família combinou o retorno', OUTRO: 'Outro',
+  };
+  const etiquetaBusca = (s) => `<span class="etiqueta-busca ${s}">${esc(SITUACAO_BUSCA[s] || s)}</span>`;
+
+  async function abrirCasoBusca(aluno, turma, motivo) {
+    const r = await sb.from('busca_ativa_casos').insert({ aluno, turma, motivo }).select('id').single();
+    if (r.error) {
+      if (/duplicate|unique/i.test(r.error.message)) throw new Error('Este estudante já tem um caso de busca ativa aberto.');
+      throw new Error(erroPT(r.error));
+    }
+    return r.data.id;
+  }
+
+  async function telaBuscaAtiva(p) {
+    if (!eu.buscaAtiva) throw new Error('Seu e-mail não tem permissão para a busca ativa. Fale com a Direção.');
+    const verTodos = p.ver === 'todos';
+    let qCasos = sb.from('busca_ativa_casos').select('*').order('atualizado_em', { ascending: false });
+    if (!verTodos) qCasos = qCasos.in('situacao', ['EM_BUSCA', 'CONTATO_FEITO', 'ENCAMINHADO']);
+    const [alertas, casos, turmas] = await Promise.all([
+      sb.rpc('alertas_faltas_busca').then(ok),
+      qCasos.then(ok),
+      turmasAtivas().catch(() => []),
+    ]);
+    const contatos = casos.length
+      ? ok(await sb.from('busca_ativa_contatos').select('caso_id, data_contato').in('caso_id', casos.map((c) => c.id)))
+      : [];
+    const resumo = {};
+    contatos.forEach((c) => {
+      const x = (resumo[c.caso_id] = resumo[c.caso_id] || { n: 0, ultimo: null });
+      x.n += 1;
+      if (!x.ultimo || c.data_contato > x.ultimo) x.ultimo = c.data_contato;
+    });
+    const semCaso = alertas.filter((a) => !a.caso_id);
+
+    conteudo.innerHTML = `
+      <div class="cabecalho-pagina"><div><h1>Busca ativa</h1>
+        <p class="muted">Acompanhe os estudantes que estão faltando e registre cada contato com a família, até o retorno às aulas.</p></div></div>
+
+      <section class="folha">
+        <h2 style="margin-top:0">Estudantes em alerta de faltas</h2>
+        ${alertas.length ? `<div class="tabela-wrap"><table>
+          <thead><tr><th>Estudante</th><th>Turma</th><th class="num">Faltas seguidas</th><th>Período</th><th></th></tr></thead>
+          <tbody>${alertas.map((a, i) => `
+            <tr>
+              <td><strong>${esc(a.aluno)}</strong></td><td>${esc(a.turma)}</td>
+              <td class="num"><strong class="atencao">${a.qtd}</strong></td>
+              <td>${dataBR(a.inicio)} a ${dataBR(a.fim)}</td>
+              <td>${a.caso_id
+                ? `<a class="btn sec peq" href="#/busca-ativa?caso=${a.caso_id}">Ver caso</a>`
+                : `<button class="btn peq" type="button" data-iniciar="${i}">Iniciar busca ativa</button>`}</td>
+            </tr>`).join('')}</tbody></table></div>
+          ${semCaso.length ? `<p class="muted" style="margin-top:.6rem">${semCaso.length} estudante(s) em alerta ainda sem busca ativa iniciada.</p>` : ''}`
+          : '<p class="muted">Nenhum estudante em alerta de faltas seguidas no momento.</p>'}
+      </section>
+
+      <div class="cabecalho-pagina" style="margin-top:1.6rem"><div><h2 style="margin:0">${verTodos ? 'Todos os casos' : 'Casos em andamento'}</h2></div>
+        <a class="btn sec peq" href="#/busca-ativa${verTodos ? '' : '?ver=todos'}">${verTodos ? 'Ver só os em andamento' : 'Ver também os encerrados'}</a>
+      </div>
+      ${casos.length ? `<div class="tabela-wrap"><table>
+        <thead><tr><th>Estudante</th><th>Turma</th><th>Situação</th><th class="num">Contatos</th><th>Último contato</th><th>Aberto em</th></tr></thead>
+        <tbody>${casos.map((c) => `
+          <tr class="clicavel" data-caso="${c.id}" tabindex="0">
+            <td><strong>${esc(c.aluno)}</strong></td><td>${esc(c.turma)}</td><td>${etiquetaBusca(c.situacao)}</td>
+            <td class="num">${resumo[c.id] ? resumo[c.id].n : 0}</td>
+            <td>${resumo[c.id] ? dataBR(resumo[c.id].ultimo) : '<span class="atencao">Nenhum ainda</span>'}</td>
+            <td>${dataHora(c.criado_em)}</td>
+          </tr>`).join('')}</tbody></table></div>`
+        : `<p class="muted">${verTodos ? 'Nenhum caso registrado.' : 'Nenhum caso em andamento.'}</p>`}
+
+      <details class="area-restrita" style="margin-top:1.6rem">
+        <summary>Abrir busca ativa para outro estudante</summary>
+        <form id="f-caso-manual">
+          <div class="grade-2">
+            <div><label class="obrig" for="ba-turma">Turma</label><select id="ba-turma" required>${opcoesTurma(turmas, '')}</select></div>
+            <div><label class="obrig" for="ba-aluno">Estudante</label><input id="ba-aluno" maxlength="150" required placeholder="Nome completo"></div>
+          </div>
+          <label for="ba-motivo">Motivo</label>
+          <input id="ba-motivo" maxlength="500" placeholder="Ex.: faltas alternadas, família pediu ajuda">
+          <p class="erro" id="ba-erro" role="alert"></p>
+          <button class="btn" type="submit">Abrir caso</button>
+        </form>
+      </details>`;
+
+    $$('button[data-iniciar]').forEach((b) => b.addEventListener('click', async () => {
+      const a = alertas[Number(b.dataset.iniciar)];
+      b.disabled = true;
+      try {
+        const id = await abrirCasoBusca(a.aluno, a.turma, `${a.qtd} faltas seguidas, de ${dataBR(a.inicio)} a ${dataBR(a.fim)}.`);
+        toast('Busca ativa iniciada.');
+        location.hash = '#/busca-ativa?caso=' + id;
+      } catch (err) { toast(err.message); b.disabled = false; }
+    }));
+    $$('tr[data-caso]').forEach((tr) => {
+      const ir = () => { location.hash = '#/busca-ativa?caso=' + tr.dataset.caso; };
+      tr.addEventListener('click', ir);
+      tr.addEventListener('keydown', (e) => { if (e.key === 'Enter') ir(); });
+    });
+    $('#f-caso-manual').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        const id = await abrirCasoBusca($('#ba-aluno').value.trim(), $('#ba-turma').value, $('#ba-motivo').value.trim());
+        toast('Busca ativa iniciada.');
+        location.hash = '#/busca-ativa?caso=' + id;
+      } catch (err) { $('#ba-erro').textContent = err.message; }
+    });
+  }
+
+  async function telaCasoBusca(id) {
+    if (!eu.buscaAtiva) throw new Error('Seu e-mail não tem permissão para a busca ativa. Fale com a Direção.');
+    const caso = ok(await sb.from('busca_ativa_casos').select('*, aberto:perfis!busca_ativa_casos_aberto_por_fkey(nome)').eq('id', id).maybeSingle());
+    if (!caso) throw new Error('Caso não encontrado.');
+    const contatos = ok(await sb.from('busca_ativa_contatos').select('*, usuario:perfis(nome)').eq('caso_id', id).order('data_contato', { ascending: false }).order('id', { ascending: false }));
+    const aberto = !['RETORNOU', 'ENCERRADO'].includes(caso.situacao);
+
+    conteudo.innerHTML = `
+      <a class="voltar" href="#/busca-ativa">&larr; Voltar para a Busca ativa</a>
+      <div class="cabecalho-pagina">
+        <div><h1>Busca ativa: ${esc(caso.aluno)} <span class="h1-turma">(${esc(caso.turma)})</span></h1>
+          <p class="muted">Aberta por ${esc(caso.aberto ? caso.aberto.nome : '')} em ${dataHora(caso.criado_em)}${caso.motivo ? `. Motivo: ${esc(caso.motivo)}` : ''}</p></div>
+        <div>${etiquetaBusca(caso.situacao)}</div>
+      </div>
+      <div class="detalhe">
+        <section class="folha">
+          <h2 style="margin-top:0">Registrar contato</h2>
+          ${aberto ? '' : '<p class="muted">Este caso está finalizado. Para registrar novos contatos, mude a situação abaixo.</p>'}
+          <form id="f-contato" ${aberto ? '' : 'class="oculto"'}>
+            <div class="grade-2">
+              <div><label class="obrig" for="ct-data">Data do contato</label><input id="ct-data" type="date" max="${hoje()}" value="${hoje()}" required></div>
+              <div><label class="obrig" for="ct-forma">Como foi o contato</label><select id="ct-forma" required>${opcoes(FORMA_CONTATO, 'TELEFONE')}</select></div>
+            </div>
+            <label for="ct-resp">Com quem falou (ou tentou falar)</label>
+            <input id="ct-resp" maxlength="150" placeholder="Ex.: mãe, Maria">
+            <label class="obrig" for="ct-res">Resultado</label>
+            <select id="ct-res" required>${opcoes(RESULTADO_CONTATO, 'SEM_SUCESSO')}</select>
+            <label for="ct-obs">O que foi conversado ou combinado</label>
+            <textarea id="ct-obs" maxlength="2000" placeholder="Ex.: a mãe disse que o aluno está doente e volta na segunda."></textarea>
+            <p class="erro" id="ct-erro" role="alert"></p>
+            <button class="btn" type="submit">Salvar contato</button>
+          </form>
+
+          <h2>Situação do caso</h2>
+          <div class="f-tipo-cat">
+            <select id="cs-situacao">${opcoes(SITUACAO_BUSCA, caso.situacao)}</select>
+            <button class="btn sec" type="button" id="cs-salvar">Salvar situação</button>
+          </div>
+          <p class="muted" style="margin-top:.5rem">Quando o estudante voltar às aulas, marque "Retornou às aulas". Ao conseguir falar com a família, o caso passa sozinho para "Contato feito".</p>
+          <p style="margin-top:1rem"><a href="#/ocorrencias?${qs({ aluno: caso.aluno, turma: caso.turma })}">Ver as ocorrências deste estudante</a></p>
+        </section>
+
+        <section class="folha">
+          <h2 style="margin-top:0">Contatos feitos (${contatos.length})</h2>
+          ${contatos.length ? `<ul class="linha-tempo">${contatos.map((c) => `
+            <li>
+              <strong>${dataBR(c.data_contato)}: ${esc(FORMA_CONTATO[c.forma])}</strong>${c.responsavel ? ` com ${esc(c.responsavel)}` : ''}<br>
+              <span class="resultado-contato ${c.resultado}">${esc(RESULTADO_CONTATO[c.resultado])}</span>
+              ${c.observacao ? `<div class="texto-livre" style="margin:.4rem 0 .2rem">${esc(c.observacao)}</div>` : ''}
+              <span class="muted">Registrado por ${esc(c.usuario ? c.usuario.nome : '')}</span>
+            </li>`).join('')}</ul>`
+            : '<p class="muted">Nenhum contato registrado ainda.</p>'}
+        </section>
+      </div>`;
+
+    $('#f-contato').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const b = $('button[type=submit]', e.target);
+      b.disabled = true;
+      try {
+        ok(await sb.from('busca_ativa_contatos').insert({
+          caso_id: id, data_contato: $('#ct-data').value, forma: $('#ct-forma').value,
+          responsavel: $('#ct-resp').value.trim(), resultado: $('#ct-res').value, observacao: $('#ct-obs').value.trim(),
+        }));
+        toast('Contato registrado.');
+        telaCasoBusca(id);
+      } catch (err) { $('#ct-erro').textContent = erroPT(err); b.disabled = false; }
+    });
+    $('#cs-salvar').addEventListener('click', async () => {
+      const nova = $('#cs-situacao').value;
+      if (nova === caso.situacao) return;
+      try {
+        ok(await sb.from('busca_ativa_casos').update({ situacao: nova }).eq('id', id));
+        toast('Situação do caso atualizada.');
+        telaCasoBusca(id);
+      } catch (err) {
+        toast(/duplicate|unique/i.test(err.message) ? 'Este estudante já tem outro caso aberto. Use aquele.' : erroPT(err));
+      }
+    });
+  }
+
   /* ================= Limpeza anual (somente Direção) ================= */
   function baixarArquivo(nome, conteudo, tipo) {
     const url = URL.createObjectURL(new Blob([conteudo], { type: tipo }));
@@ -1884,7 +2107,7 @@
 
   /* ================= Auditoria (Direção) ================= */
   const ACOES = ['LOGIN', 'LOGOUT', 'OCORRENCIA_CRIADA', 'OCORRENCIA_VISUALIZADA', 'OCORRENCIA_ATUALIZADA', 'MENSAGEM_ENVIADA',
-    'PDF_OCORRENCIA', 'PDF_RELATORIO', 'SAIR_DE_TODOS', 'ANEXO_ADICIONADO', 'ANEXO_ABERTO', 'ANEXO_REMOVIDO', 'OCORRENCIA_EDITADA', 'OCORRENCIA_EXCLUIDA', 'TURMA_ALTERADA', 'ALERTA_FALTAS', 'NOME_ALTERADO', 'LIMPEZA_OCORRENCIAS', 'CATEGORIA_CRIADA', 'CATEGORIA_ALTERADA',
+    'PDF_OCORRENCIA', 'PDF_RELATORIO', 'SAIR_DE_TODOS', 'ANEXO_ADICIONADO', 'ANEXO_ABERTO', 'ANEXO_REMOVIDO', 'OCORRENCIA_EDITADA', 'OCORRENCIA_EXCLUIDA', 'TURMA_ALTERADA', 'ALERTA_FALTAS', 'NOME_ALTERADO', 'BUSCA_ATIVA_CASO', 'BUSCA_ATIVA_CONTATO', 'BUSCA_ATIVA_ACESSO_LIBERADO', 'BUSCA_ATIVA_ACESSO_REMOVIDO', 'LIMPEZA_OCORRENCIAS', 'CATEGORIA_CRIADA', 'CATEGORIA_ALTERADA',
     'USUARIO_FUNCAO', 'USUARIO_ATIVADO', 'USUARIO_DESATIVADO', 'FUNCAO_ALTERADA',
     'TIPO_ALTERADO', 'CONFIG_ALTERADA'];
 
