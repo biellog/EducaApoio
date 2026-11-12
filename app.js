@@ -346,6 +346,9 @@
     ];
     $('#menu').innerHTML = itens.filter((i) => i[2]).map(([h, t]) => `<a href="${h}">${esc(t)}</a>`).join('');
     $('#nome-usuario').textContent = eu.nome;
+    if (!$('#link-alterar-nome')) {
+      $('#perfil-usuario').insertAdjacentHTML('afterend', '<a id="link-alterar-nome" class="link-lateral" href="#/conta?editar=nome">alterar nome</a>');
+    }
     $('#perfil-usuario').textContent = eu.funcao.nome;
   }
   function marcarMenu() {
@@ -467,7 +470,7 @@
         case 'limpeza-anual': return await telaLimpeza();
         case 'turmas': return await telaTurmas();
         case 'auditoria': return await telaAuditoria(params);
-        case 'conta': return await telaConta();
+        case 'conta': return await telaConta(params);
         default: return await telaLista(params);
       }
     } catch (err) {
@@ -529,10 +532,10 @@
       </form>
       ${r.data.length ? `
       <div class="tabela-wrap"><table>
-        <thead><tr><th></th><th>Data</th><th>Estudante</th><th>Turma</th><th>Tipo</th><th>Registrado por</th><th>Situação</th></tr></thead>
+        <thead><tr><th>Nº</th><th>Data</th><th>Estudante</th><th>Turma</th><th>Tipo</th><th>Registrado por</th><th>Situação</th></tr></thead>
         <tbody>${r.data.map((o) => `
           <tr class="clicavel" data-id="${o.id}" tabindex="0">
-            <td class="num"></td><td>${dataBR(o.data_fato)}</td><td>${esc(o.aluno)}${o.grupo ? '<br><span class="tag-grupo">Em grupo</span>' : ''}</td><td>${esc(o.turma)}</td>
+            <td class="num">${o.id}</td><td>${dataBR(o.data_fato)}</td><td>${esc(o.aluno)}${o.grupo ? '<br><span class="tag-grupo">Em grupo</span>' : ''}</td><td>${esc(o.turma)}</td>
             <td>${esc(o.tipo_nome)}${o.categoria === 'CONVIVA' ? '<br><span class="tag-conviva">Conviva</span>' : ''}</td>
             <td>${esc(o.autor_nome)}</td><td>${carimbo(o.status)}</td>
           </tr>`).join('')}</tbody>
@@ -837,7 +840,7 @@
     conteudo.innerHTML = `
       <a class="voltar" href="#/ocorrencias">&larr; Voltar para a lista</a>
       <div class="cabecalho-pagina">
-        <div><h1>Ocorrência do aluno:  ${o.aluno}</h1><p class="muted">Registrada por ${esc(o.autor_nome)}${o.autor_funcao ? ` (${esc(o.autor_funcao)})` : ''} em ${dataHora(o.criado_em)}</p></div>
+        <div><h1>Ocorrência nº ${o.id}</h1><p class="muted">Registrada por ${esc(o.autor_nome)}${o.autor_funcao ? ` (${esc(o.autor_funcao)})` : ''} em ${dataHora(o.criado_em)}</p></div>
         <div>${carimbo(o.status, true)}</div>
       </div>
       <div class="detalhe${comChat ? '' : ' sem-chat'}">
@@ -865,7 +868,7 @@
           <form id="f-editar" class="oculto edicao"></form>
           <div class="acoes">
             ${pode('relatorios') ? '<button class="btn sec" type="button" id="b-pdf">Gerar PDF para prontuário</button>' : ''}
-            <a class="btn sec" href="#/ocorrencias?${qs({ aluno: o.aluno })}+&${qs({ turma: o.turma })}">Histórico do estudante (${totalAluno == null ? '?' : totalAluno})</a>
+            <a class="btn sec" href="#/ocorrencias?${qs({ aluno: o.aluno })}">Histórico do estudante (${totalAluno == null ? '?' : totalAluno})</a>
           </div>
           ${pode('acompanhar') ? `
           <h2>Acompanhamento</h2>
@@ -1881,7 +1884,7 @@
 
   /* ================= Auditoria (Direção) ================= */
   const ACOES = ['LOGIN', 'LOGOUT', 'OCORRENCIA_CRIADA', 'OCORRENCIA_VISUALIZADA', 'OCORRENCIA_ATUALIZADA', 'MENSAGEM_ENVIADA',
-    'PDF_OCORRENCIA', 'PDF_RELATORIO', 'SAIR_DE_TODOS', 'ANEXO_ADICIONADO', 'ANEXO_ABERTO', 'ANEXO_REMOVIDO', 'OCORRENCIA_EDITADA', 'OCORRENCIA_EXCLUIDA', 'TURMA_ALTERADA', 'ALERTA_FALTAS', 'LIMPEZA_OCORRENCIAS', 'CATEGORIA_CRIADA', 'CATEGORIA_ALTERADA',
+    'PDF_OCORRENCIA', 'PDF_RELATORIO', 'SAIR_DE_TODOS', 'ANEXO_ADICIONADO', 'ANEXO_ABERTO', 'ANEXO_REMOVIDO', 'OCORRENCIA_EDITADA', 'OCORRENCIA_EXCLUIDA', 'TURMA_ALTERADA', 'ALERTA_FALTAS', 'NOME_ALTERADO', 'LIMPEZA_OCORRENCIAS', 'CATEGORIA_CRIADA', 'CATEGORIA_ALTERADA',
     'USUARIO_FUNCAO', 'USUARIO_ATIVADO', 'USUARIO_DESATIVADO', 'FUNCAO_ALTERADA',
     'TIPO_ALTERADO', 'CONFIG_ALTERADA'];
 
@@ -1916,12 +1919,20 @@
   }
 
   /* ================= Minha conta ================= */
-  async function telaConta() {
+  async function telaConta(p) {
     conteudo.innerHTML = `
       <div class="cabecalho-pagina"><div><h1>Minha conta</h1></div></div>
       <section class="folha" style="max-width:560px">
-        <div class="dados"><dl>
-          <dt>Nome</dt><dd>${esc(eu.nome)}</dd>
+        <form id="f-nome">
+          <label for="mc-nome">Seu nome</label>
+          <div class="f-tipo-cat">
+            <input id="mc-nome" name="nome" maxlength="120" required value="${esc(eu.nome)}" autocomplete="name">
+            <button class="btn" type="submit">Salvar nome</button>
+          </div>
+          <p class="muted" style="margin-top:.5rem">É o nome que aparece nas ocorrências, nas conversas e nos PDFs.</p>
+          <p class="erro" id="mc-erro" role="alert"></p>
+        </form>
+        <div class="dados" style="margin-top:.6rem"><dl>
           <dt>Função</dt><dd>${esc(eu.funcao.nome)}</dd>
           <dt>E-mail de acesso</dt><dd>${esc(eu.email)}</dd>
         </dl></div>
@@ -1937,6 +1948,27 @@
         <p class="muted">Esqueceu o EducaApoio aberto em outro computador ou perdeu o celular? Encerre o acesso em todos os aparelhos. Para voltar, basta pedir um novo código.</p>
         <button class="btn perigo" type="button" id="b-global">Sair de todos os aparelhos</button>
       </section>`;
+    $('#f-nome').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const novo = $('#mc-nome').value.trim().replace(/\s+/g, ' ');
+      $('#mc-erro').textContent = '';
+      if (novo === eu.nome) { $('#mc-erro').textContent = 'Nada foi alterado.'; return; }
+      const b = $('button[type=submit]', e.target);
+      b.disabled = true;
+      try {
+        ok(await sb.rpc('alterar_meu_nome', { p_nome: novo }));
+        eu.nome = novo;
+        $('#nome-usuario').textContent = novo;
+        toast('Nome alterado.');
+      } catch (err) {
+        $('#mc-erro').textContent = /alterar_meu_nome/.test(err.message)
+          ? 'Falta ativar esta opção no banco: rode o arquivo migracao-alterar-nome.sql no Supabase.'
+          : erroPT(err);
+      }
+      b.disabled = false;
+    });
+    if (p && p.editar === 'nome') { $('#mc-nome').focus(); $('#mc-nome').select(); }
+
     $('#b-som').addEventListener('click', () => {
       const ligar = !somLigado();
       definirSom(ligar);
@@ -1955,6 +1987,7 @@
       location.reload();
     });
   }
+
   /* ================= Inicialização ================= */
   (async function iniciar() {
     if (!configurado) return mostrarEtapa('sem-config');
