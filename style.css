@@ -462,3 +462,7 @@ a.numero:hover { transform: translateY(-2px); box-shadow: var(--sombra-forte); }
   .app { display: block; }
   .folha, .etapa, .tabela-wrap { box-shadow: none; }
 }
+
+/* Link "alterar nome" na barra lateral */
+.lateral .link-lateral { display: inline-block; margin-top: .3rem; color: #fff; font-size: .88rem; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; opacity: .85; }
+.lateral .link-lateral:hover { opacity: 1; }
