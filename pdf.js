@@ -55,7 +55,7 @@ window.EducaApoioPDF = (function () {
   }
 
   function ficha(oc, historico, escola, geradoPor, anexos) {
-    const p = criar(`Registro de Ocorrência`, escola);
+    const p = criar('Registro de Ocorrência', escola);
     p.texto(`Data do fato: ${dataBR(oc.data_fato)}`);
     p.texto(`Estudante: ${oc.aluno}`, { negrito: true });
     p.texto(`Turma: ${oc.turma}`);
@@ -63,8 +63,8 @@ window.EducaApoioPDF = (function () {
     p.texto(`Tipo de ocorrência: ${oc.tipo_nome}`);
     p.texto(`Situação: ${STATUS[oc.status]}`);
     if (oc.grupo) {
-      p.texto(oc.grupo_ids && oc.grupo_ids.length
-        ? `Ocorrência em grupo: o mesmo fato foi registrado também nas ocorrências nº ${oc.grupo_ids.join(', ')}, de outros estudantes.`
+      p.texto(oc.grupo_qtd
+        ? `Ocorrência em grupo: o mesmo fato foi registrado também para outro(s) ${oc.grupo_qtd} estudante(s).`
         : 'Ocorrência em grupo: o mesmo fato foi registrado também para outros estudantes.', { tam: 9 });
     }
     p.texto(`Registrado por: ${oc.autor_nome}${oc.autor_funcao ? ` (${oc.autor_funcao})` : ''} em ${dataHora(oc.criado_em)}`);
@@ -102,7 +102,7 @@ window.EducaApoioPDF = (function () {
     if (anexos && anexos.length) {
       d.addPage();
       p.setY(M);
-      p.texto(`Anexos da ocorrência`, { tam: 12, negrito: true });
+      p.texto(`Anexos da ocorrência de ${oc.aluno} (${oc.turma})`, { tam: 12, negrito: true });
       p.espaco(4);
       anexos.forEach((a, i) => {
         const legenda = `${i + 1}. ${a.nome} (anexado por ${a.usuario} em ${dataHora(a.criado_em)})`;
@@ -122,7 +122,9 @@ window.EducaApoioPDF = (function () {
       });
     }
 
-    p.finalizar(`ocorrencia-${oc.id}.pdf`, geradoPor);
+    const arquivo = `ocorrencia-${oc.aluno}-${oc.data_fato}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/-+/g, '-').slice(0, 80);
+    p.finalizar(`${arquivo}.pdf`, geradoPor);
   }
 
   function relatorio(lista, filtrosTexto, escola, geradoPor) {
@@ -132,17 +134,17 @@ window.EducaApoioPDF = (function () {
     const c = { ABERTA: 0, EM_ACOMPANHAMENTO: 0, ENCERRADA: 0 };
     lista.forEach((o) => { c[o.status]++; });
     const grupos = {};
-    lista.forEach((o) => { if (o.grupo) (grupos[o.grupo] = grupos[o.grupo] || []).push(o.id); });
+    lista.forEach((o) => { if (o.grupo) (grupos[o.grupo] = grupos[o.grupo] || []).push(o); });
     p.texto(`Total: ${lista.length}   Abertas: ${c.ABERTA}   Em acompanhamento: ${c.EM_ACOMPANHAMENTO}   Encerradas: ${c.ENCERRADA}`, { negrito: true });
     p.espaco(4);
     p.linha();
     if (!lista.length) p.texto('Nenhuma ocorrência encontrada com esses filtros.');
     lista.forEach((o) => {
       p.precisa(70);
-      p.texto(`Nº ${o.id}  ${dataBR(o.data_fato)}  ${o.aluno} (${o.turma})`, { negrito: true });
+      p.texto(`${dataBR(o.data_fato)}  ${o.aluno} (${o.turma})`, { negrito: true });
       p.texto(`${o.categoria_nome || CATEGORIA[o.categoria] || o.categoria} / ${o.tipo_nome}   Situação: ${STATUS[o.status]}   Registro: ${o.autor_nome}`, { tam: 9 });
       if (o.grupo && grupos[o.grupo] && grupos[o.grupo].length > 1) {
-        p.texto(`Em grupo com as ocorrências nº ${grupos[o.grupo].filter((x) => x !== o.id).join(', ')} (mesmo fato).`, { tam: 9 });
+        p.texto(`Mesmo fato, em grupo com: ${grupos[o.grupo].filter((x) => x.id !== o.id).map((x) => `${x.aluno} (${x.turma})`).join(', ')}.`, { tam: 9 });
       }
       p.texto(`Fato: ${o.descricao}`, { tam: 9 });
       p.texto(`Providências: ${o.providencias}`, { tam: 9 });

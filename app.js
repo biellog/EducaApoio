@@ -167,7 +167,7 @@
       for (const id of ids) {
         feito += 1;
         if (aoProgresso) aoProgresso(feito, total);
-        try { await enviarPreparado(id, prep); } catch (e) { falhas.push(`${prep.original} (ocorrência nº ${id}): ${e.message}`); }
+        try { await enviarPreparado(id, prep); } catch (e) { falhas.push(`${prep.original}: ${e.message}`); }
       }
     }
     return falhas;
@@ -532,10 +532,10 @@
       </form>
       ${r.data.length ? `
       <div class="tabela-wrap"><table>
-        <thead><tr><th>Nº</th><th>Data</th><th>Estudante</th><th>Turma</th><th>Tipo</th><th>Registrado por</th><th>Situação</th></tr></thead>
+        <thead><tr><th>Data</th><th>Estudante</th><th>Turma</th><th>Tipo</th><th>Registrado por</th><th>Situação</th></tr></thead>
         <tbody>${r.data.map((o) => `
           <tr class="clicavel" data-id="${o.id}" tabindex="0">
-            <td class="num">${o.id}</td><td>${dataBR(o.data_fato)}</td><td>${esc(o.aluno)}${o.grupo ? '<br><span class="tag-grupo">Em grupo</span>' : ''}</td><td>${esc(o.turma)}</td>
+            <td>${dataBR(o.data_fato)}</td><td>${esc(o.aluno)}${o.grupo ? '<br><span class="tag-grupo">Em grupo</span>' : ''}</td><td>${esc(o.turma)}</td>
             <td>${esc(o.tipo_nome)}${o.categoria === 'CONVIVA' ? '<br><span class="tag-conviva">Conviva</span>' : ''}</td>
             <td>${esc(o.autor_nome)}</td><td>${carimbo(o.status)}</td>
           </tr>`).join('')}</tbody>
@@ -840,7 +840,7 @@
     conteudo.innerHTML = `
       <a class="voltar" href="#/ocorrencias">&larr; Voltar para a lista</a>
       <div class="cabecalho-pagina">
-        <div><h1>Ocorrência nº ${o.id}</h1><p class="muted">Registrada por ${esc(o.autor_nome)}${o.autor_funcao ? ` (${esc(o.autor_funcao)})` : ''} em ${dataHora(o.criado_em)}</p></div>
+        <div><h1>Ocorrência de ${esc(o.aluno)} <span class="h1-turma">(${esc(o.turma)})</span></h1><p class="muted">Registrada por ${esc(o.autor_nome)}${o.autor_funcao ? ` (${esc(o.autor_funcao)})` : ''} em ${dataHora(o.criado_em)}</p></div>
         <div>${carimbo(o.status, true)}</div>
       </div>
       <div class="detalhe${comChat ? '' : ' sem-chat'}">
@@ -856,7 +856,7 @@
           ${o.grupo ? `
           <div class="grupo-box">
             <strong>Ocorrência em grupo.</strong> O mesmo fato foi registrado também para:
-            ${grupoOutros.length ? `<ul>${grupoOutros.map((g) => `<li><a href="#/ocorrencia/${g.id}">${esc(g.aluno)} (${esc(g.turma)})</a>, nº ${g.id} ${carimbo(g.status)}</li>`).join('')}</ul>`
+            ${grupoOutros.length ? `<ul>${grupoOutros.map((g) => `<li><a href="#/ocorrencia/${g.id}">${esc(g.aluno)} (${esc(g.turma)})</a> ${carimbo(g.status)}</li>`).join('')}</ul>`
               : '<p class="muted" style="margin:.3rem 0 0">outros estudantes que você não tem permissão para ver.</p>'}
             <p class="muted" style="margin:.4rem 0 0">Cada estudante tem a própria ocorrência: editar, encerrar ou excluir vale só para esta.</p>
           </div>` : ''}
@@ -958,7 +958,7 @@
           const turmas = await turmasAtivas();
           const f = $('#f-editar');
           f.innerHTML = `
-            <h2 style="margin-top:0">Editar ocorrência nº ${o.id}</h2>
+            <h2 style="margin-top:0">Editar ocorrência de ${esc(o.aluno)}</h2>
             <p class="muted">Corrija o que for preciso. A correção fica registrada na linha do tempo, com o que mudou, quem corrigiu e quando.</p>
             <div class="grade-3">
               <div><label class="obrig" for="ed-data">Data do fato</label><input id="ed-data" type="date" name="data_fato" max="${hoje()}" value="${esc(o.data_fato)}" required></div>
@@ -1037,7 +1037,7 @@
       $('#b-confirmar-exclusao').addEventListener('click', async () => {
         const motivo = $('#ex-motivo').value.trim();
         if (motivo.length < 5) { $('#ex-erro').textContent = 'Escreva o motivo da exclusão.'; return; }
-        if (!confirm(`Última confirmação: excluir a ocorrência nº ${id} de ${o.aluno}?`)) return;
+        if (!confirm(`Última confirmação: excluir a ocorrência de ${o.aluno} (${o.turma}), do dia ${dataBR(o.data_fato)}?`)) return;
         const b = $('#b-confirmar-exclusao');
         b.disabled = true;
         b.textContent = 'Excluindo…';
@@ -1050,7 +1050,7 @@
           if (canalOc) sb.removeChannel(canalOc);
           canalOc = null;
           ocAtual = null;
-          toast(`Ocorrência nº ${id} excluída.`);
+          toast(`Ocorrência de ${o.aluno} excluída.`);
           location.hash = '#/ocorrencias';
         } catch (err) {
           $('#ex-erro').textContent = erroPT(err);
@@ -1098,7 +1098,7 @@
             }
             lista.push(item);
           }
-          window.EducaApoioPDF.ficha({ ...o, grupo_ids: grupoOutros.map((g) => g.id) }, historico, escola, eu.nome, lista);
+          window.EducaApoioPDF.ficha({ ...o, grupo_qtd: grupoOutros.length }, historico, escola, eu.nome, lista);
           auditar('PDF_OCORRENCIA', 'ocorrencia', id);
         } catch (err) {
           toast(erroPT(err));

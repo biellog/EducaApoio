@@ -464,5 +464,8 @@ a.numero:hover { transform: translateY(-2px); box-shadow: var(--sombra-forte); }
 }
 
 /* Link "alterar nome" na barra lateral */
-.lateral .link-lateral { display: inline-block; margin-top: .3rem; color: #fff; font-size: .88rem; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; opacity: .85; }
+.lateral .link-lateral { display: block; width: fit-content; margin-top: .35rem; color: #fff; font-size: .88rem; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; opacity: .85; }
 .lateral .link-lateral:hover { opacity: 1; }
+
+/* Turma ao lado do nome no título da ocorrência */
+.h1-turma { font-weight: 600; color: var(--tinta-2); }
