@@ -1248,8 +1248,8 @@
     if (!ehDirecao()) throw new Error('Somente a Direção gerencia usuários.');
     const [lista, funcoes, autorizados] = await Promise.all([
       sb.rpc('listar_usuarios').then(ok),
-      sb.from('busca_ativa_autorizados').select('usuario_id').then((r) => (r.error ? null : r.data.map((a) => a.usuario_id))),
       sb.from('funcoes').select('id, nome, direcao').order('direcao', { ascending: false }).order('nome').then(ok),
+      sb.from('busca_ativa_autorizados').select('usuario_id').then((r) => (r.error ? null : r.data.map((a) => a.usuario_id))),
     ]);
     const opcoesFuncao = (sel, vazio) =>
       (vazio ? `<option value="">${esc(vazio)}</option>` : '') +
@@ -1353,7 +1353,7 @@
       sb.from('funcoes').select('*').order('direcao', { ascending: false }).order('nome').then(ok),
       sb.rpc('listar_usuarios').then(ok),
     ]);
-    const qtd = (id) => pessoas.filter((u) => u.funcao_id === id).length;
+    const qtd = (id) => pessoas.filter((u) => String(u.funcao_id) === String(id)).length;
     const resumo = (f) => {
       if (f.direcao) return 'Acesso total, inclusive usuários e funções.';
       const itens = PERMISSOES.filter(([k]) => f[k]).map(([, rot]) => rot.toLowerCase());
