@@ -1253,13 +1253,13 @@
     ]);
     const opcoesFuncao = (sel, vazio) =>
       (vazio ? `<option value="">${esc(vazio)}</option>` : '') +
-      funcoes.map((f) => `<option value="${f.id}" ${f.id === sel ? 'selected' : ''}>${esc(f.nome)}</option>`).join('');
+      funcoes.map((f) => `<option value="${f.id}" ${sel != null && String(f.id) === String(sel) ? 'selected' : ''}>${esc(f.nome)}</option>`).join('');
     const pendentes = lista.filter((u) => !u.funcao_id).length;
-    const idsDirecao = new Set(funcoes.filter((f) => f.direcao).map((f) => f.id));
+    const idsDirecao = new Set(funcoes.filter((f) => f.direcao).map((f) => String(f.id)));
     const celulaBusca = (u) => {
-      if (idsDirecao.has(u.funcao_id)) return '<span class="muted">Sempre (Direção)</span>';
+      if (u.funcao_id != null && idsDirecao.has(String(u.funcao_id))) return '<span class="muted">Sempre (Direção)</span>';
       if (autorizados === null) return '<span class="muted">-</span>';
-      const tem = autorizados.includes(u.id);
+      const tem = autorizados.some((a) => String(a) === String(u.id));
       return `<button class="btn ${tem ? '' : 'sec'} peq" type="button" data-busca="${tem ? 0 : 1}">${tem ? 'Permitida' : 'Permitir'}</button>`;
     };
 
