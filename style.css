@@ -481,3 +481,8 @@ a.numero:hover { transform: translateY(-2px); box-shadow: var(--sombra-forte); }
 .resultado-contato.SEM_SUCESSO { color: var(--vermelho); }
 .resultado-contato.CONVERSOU, .resultado-contato.RETORNO_COMBINADO { color: var(--verde); }
 .atalho[href="#/busca-ativa"]::before { content: "☎"; background: var(--vermelho-claro); color: var(--vermelho); }
+
+/* Usuários: caixa de função legível e e-mail quebrando linha */
+select.u-funcao { min-width: 230px; }
+.tabela-wrap td { overflow-wrap: anywhere; }
+.tabela-wrap td:has(select.u-funcao) { min-width: 240px; }
