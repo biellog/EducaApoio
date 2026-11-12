@@ -509,7 +509,7 @@
     if (r.error) throw r.error;
     const total = r.count || 0;
     const paginas = Math.max(1, Math.ceil(total / POR_PAGINA));
-    const titulo = p.aluno ? `Histórico de ${p.aluno}` : pode('ver_todas') ? 'Ocorrências' : 'Minhas ocorrências';
+    const titulo = p.aluno ? `Histórico de ${p.aluno}${p.turma ? ` (${p.turma})` : ''}` : pode('ver_todas') ? 'Ocorrências' : 'Minhas ocorrências';
 
     conteudo.innerHTML = `
       <div class="cabecalho-pagina">
@@ -580,7 +580,7 @@
     if (!lista || !lista.length) return '';
     const limite = escola.limite_faltas || 3;
     const linhas = (compacto ? lista.slice(0, 6) : lista).map((a) => `
-      <li><a href="#/ocorrencias?${qs({ aluno: a.aluno })}"><strong>${esc(a.aluno)}</strong> (${esc(a.turma)})</a>:
+      <li><a href="#/ocorrencias?${qs({ aluno: a.aluno, turma: a.turma })}"><strong>${esc(a.aluno)}</strong> (${esc(a.turma)})</a>:
         <strong>${a.qtd} faltas seguidas</strong>, de ${dataBR(a.inicio)} a ${dataBR(a.fim)}</li>`).join('');
     return `
       <section class="alerta-faltas" role="alert">
@@ -807,7 +807,7 @@
     const [historico, mensagens, totalAluno, anexos] = await Promise.all([
       sb.from('historico_status').select('*, usuario:perfis(nome)').eq('ocorrencia_id', id).order('id').then(ok),
       comChat ? sb.from('mensagens').select(SEL_MSG).eq('ocorrencia_id', id).order('id').then(ok) : Promise.resolve([]),
-      sb.from('ocorrencias').select('id', { count: 'exact', head: true }).ilike('aluno', exato(o.aluno)).then((r) => r.count),
+      sb.from('ocorrencias').select('id', { count: 'exact', head: true }).ilike('aluno', exato(o.aluno)).eq('turma', o.turma).then((r) => r.count),
       sb.from('anexos').select('*, usuario:perfis(nome)').eq('ocorrencia_id', id).order('id').then(ok),
     ]);
     // Links temporários (1 hora) para mostrar os arquivos privados
@@ -868,7 +868,7 @@
           <form id="f-editar" class="oculto edicao"></form>
           <div class="acoes">
             ${pode('relatorios') ? '<button class="btn sec" type="button" id="b-pdf">Gerar PDF para prontuário</button>' : ''}
-            <a class="btn sec" href="#/ocorrencias?${qs({ aluno: o.aluno })}">Histórico do estudante (${totalAluno == null ? '?' : totalAluno})</a>
+            <a class="btn sec" href="#/ocorrencias?${qs({ aluno: o.aluno, turma: o.turma })}">Histórico do estudante (${totalAluno == null ? '?' : totalAluno})</a>
           </div>
           ${pode('acompanhar') ? `
           <h2>Acompanhamento</h2>
@@ -1167,14 +1167,14 @@
       ${d.alunos.length ? `<div class="tabela-wrap"><table>
         <thead><tr><th>Estudante</th><th>Turma</th><th class="num">Total</th><th class="num">Não encerradas</th><th class="num">Conviva</th><th>Última</th></tr></thead>
         <tbody>${d.alunos.map((a) => `
-          <tr class="clicavel" data-aluno="${esc(a.aluno)}" tabindex="0">
+          <tr class="clicavel" data-aluno="${esc(a.aluno)}" data-turma="${esc(a.turma)}" tabindex="0">
             <td class="${a.n >= d.limite_atencao ? 'atencao' : ''}">${esc(a.aluno)}${a.n >= d.limite_atencao ? ' (atenção)' : ''}</td>
             <td>${esc(a.turma)}</td><td class="num">${a.n}</td><td class="num">${a.em_aberto}</td><td class="num">${a.conviva}</td><td>${dataBR(a.ultima)}</td>
           </tr>`).join('')}</tbody></table></div>` : '<p class="muted">Sem dados no período.</p>'}`;
 
     $('#f-painel').addEventListener('submit', (e) => { e.preventDefault(); location.hash = '#/painel?' + qs(lerForm(e.target)); });
     $$('tr[data-aluno]').forEach((tr) => {
-      const ir = () => { location.hash = '#/ocorrencias?' + qs({ aluno: tr.dataset.aluno }); };
+      const ir = () => { location.hash = '#/ocorrencias?' + qs({ aluno: tr.dataset.aluno, turma: tr.dataset.turma }); };
       tr.addEventListener('click', ir);
       tr.addEventListener('keydown', (e) => { if (e.key === 'Enter') ir(); });
     });
