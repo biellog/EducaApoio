@@ -469,3 +469,15 @@ a.numero:hover { transform: translateY(-2px); box-shadow: var(--sombra-forte); }
 
 /* Turma ao lado do nome no título da ocorrência */
 .h1-turma { font-weight: 600; color: var(--tinta-2); }
+
+/* Busca ativa */
+.etiqueta-busca { display: inline-block; font-weight: 800; font-size: .85rem; padding: .2rem .7rem; border-radius: 999px; white-space: nowrap; }
+.etiqueta-busca.EM_BUSCA { color: var(--vermelho); background: var(--vermelho-claro); }
+.etiqueta-busca.CONTATO_FEITO { color: var(--ambar); background: var(--ambar-claro); }
+.etiqueta-busca.RETORNOU { color: var(--verde); background: var(--verde-claro); }
+.etiqueta-busca.ENCAMINHADO { color: var(--caneta); background: var(--caneta-clara); }
+.etiqueta-busca.ENCERRADO { color: var(--tinta-2); background: var(--papel-2); }
+.resultado-contato { display: inline-block; font-size: .85rem; font-weight: 800; margin-top: .2rem; }
+.resultado-contato.SEM_SUCESSO { color: var(--vermelho); }
+.resultado-contato.CONVERSOU, .resultado-contato.RETORNO_COMBINADO { color: var(--verde); }
+.atalho[href="#/busca-ativa"]::before { content: "☎"; background: var(--vermelho-claro); color: var(--vermelho); }
