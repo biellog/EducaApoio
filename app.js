@@ -580,18 +580,25 @@
     const r = await sb.rpc('alertas_faltas');
     return r.error ? null : r.data; // null = migração ainda não rodada
   }
+  // "4 faltas no dia 12/11" ou "6 faltas em 3 dias seguidos (09/11 a 11/11)"
+  function textoFaltas(a) {
+    const dias = a.dias || 1;
+    return dias === 1
+      ? `<strong>${a.qtd} faltas</strong> no dia ${dataBR(a.fim)}`
+      : `<strong>${a.qtd} faltas</strong> em ${dias} dias seguidos, de ${dataBR(a.inicio)} a ${dataBR(a.fim)}`;
+  }
   function htmlAlertasFaltas(lista, compacto) {
     if (!lista || !lista.length) return '';
     const limite = escola.limite_faltas || 3;
     const linhas = (compacto ? lista.slice(0, 6) : lista).map((a) => `
       <li><a href="#/ocorrencias?${qs({ aluno: a.aluno, turma: a.turma })}"><strong>${esc(a.aluno)}</strong> (${esc(a.turma)})</a>:
-        <strong>${a.qtd} faltas seguidas</strong>, de ${dataBR(a.inicio)} a ${dataBR(a.fim)}</li>`).join('');
+        ${textoFaltas(a)}</li>`).join('');
     return `
       <section class="alerta-faltas" role="alert">
-        <h2>Alerta de faltas: ${lista.length} estudante(s) com mais de ${limite} faltas seguidas</h2>
+        <h2>Alerta de faltas: ${lista.length} estudante(s) com mais de ${limite} faltas</h2>
         <ul>${linhas}</ul>
         ${compacto && lista.length > 6 ? `<p><a href="#/painel">Ver todos no Painel</a></p>` : ''}
-        <p class="muted">Considera dias úteis seguidos (segunda a sexta) e a última falta nos últimos 30 dias. Clique no nome para ver o histórico.</p>
+        <p class="muted">Cada falta registrada conta: as do mesmo dia somam, e somam também com as de dias úteis seguidos (segunda a sexta). Mostra quem faltou nos últimos 30 dias. Clique no nome para ver o histórico.</p>
       </section>`;
   }
 
@@ -643,8 +650,21 @@
           <div style="max-width:260px"><label class="obrig" for="n-data">Data do fato</label><input id="n-data" type="date" name="data_fato" max="${hoje()}" value="${hoje()}" required></div>
           ${turmas.length ? '' : `<p class="erro">Nenhuma turma cadastrada. ${pode('turmas') ? 'Cadastre as turmas em <a href="#/turmas">Turmas</a>.' : 'Peça para a Direção cadastrar as turmas.'}</p>`}
           <div id="envolvidos" class="envolvidos"></div>
-          <button class="btn sec" type="button" id="b-mais-aluno" ${turmas.length ? '' : 'disabled'}>+ Adicionar outro estudante</button>
-          <p class="muted" id="aviso-grupo" style="margin-top:.6rem">Briga ou fato com estudantes de turmas diferentes? Adicione todos aqui: cada um ganha a própria ocorrência, ligada às outras.</p>
+          <button class="btn-adicionar" type="button" id="b-mais-aluno" ${turmas.length ? '' : 'disabled'}>
+            <span class="mais">+</span> Adicionar outro estudante
+            <span class="dica-tecla">ou aperte Enter depois do nome</span>
+          </button>
+          <details class="colar-lista" ${turmas.length ? '' : 'hidden'}>
+            <summary>Colar uma lista de nomes (vários estudantes da mesma turma)</summary>
+            <div class="grade-2">
+              <div><label for="cl-turma">Turma</label><select id="cl-turma">${opcoesTurma(turmas, '')}</select></div>
+            </div>
+            <label for="cl-nomes">Nomes, um por linha</label>
+            <textarea id="cl-nomes" rows="5" placeholder="Ana Souza&#10;Bruno Lima&#10;Carla Mendes"></textarea>
+            <p class="erro" id="cl-erro" role="alert"></p>
+            <button class="btn sec" type="button" id="cl-adicionar">Adicionar estes estudantes</button>
+          </details>
+          <p class="muted" id="aviso-grupo" style="margin-top:.8rem">Briga ou fato com estudantes de turmas diferentes? Adicione todos aqui: cada um ganha a própria ocorrência, ligada às outras.</p>
         </fieldset>
         <fieldset class="etapa">
           <legend><span class="num">2</span> O que aconteceu</legend>
@@ -674,11 +694,12 @@
       </form>`;
 
     const datalistAlunos = $('#dl-alunos') ? 'dl-alunos' : '';
-    const linhaEnvolvido = () => `
+    const linhaEnvolvido = (turma, nome) => `
       <div class="envolvido">
-        <div><label class="obrig">Turma</label><select required ${turmas.length ? '' : 'disabled'}>${opcoesTurma(turmas, '')}</select></div>
-        <div><label class="obrig">Estudante</label><input list="${datalistAlunos}" maxlength="150" placeholder="Nome completo" required></div>
-        <button class="btn perigo peq remover-envolvido" type="button" title="Remover este estudante">Remover</button>
+        <span class="num-envolvido" aria-hidden="true"></span>
+        <div><label class="obrig">Turma</label><select required ${turmas.length ? '' : 'disabled'}>${opcoesTurma(turmas, turma || '')}</select></div>
+        <div><label class="obrig">Estudante</label><input list="${datalistAlunos}" maxlength="150" placeholder="Nome completo" required value="${esc(nome || '')}"></div>
+        <button class="remover-envolvido" type="button" title="Remover este estudante" aria-label="Remover este estudante">&times;</button>
       </div>`;
     const renumerar = () => {
       const linhas = $$('#envolvidos .envolvido');
@@ -688,17 +709,28 @@
         const inp = $('input', l);
         sel.id = `n-turma-${i}`; inp.id = `n-aluno-${i}`;
         lt.setAttribute('for', sel.id); la.setAttribute('for', inp.id);
-        la.textContent = linhas.length > 1 ? `Estudante ${i + 1}` : 'Estudante';
+        $('.num-envolvido', l).textContent = i + 1;
+        l.classList.toggle('varios', linhas.length > 1);
         $('.remover-envolvido', l).classList.toggle('oculto', linhas.length === 1);
       });
       $('#aviso-grupo').innerHTML = linhas.length > 1
         ? `<strong>${linhas.length} estudantes:</strong> serão criadas ${linhas.length} ocorrências ligadas, uma para cada um, com a mesma descrição, providências e fotos.`
         : 'Briga ou fato com estudantes de turmas diferentes? Adicione todos aqui: cada um ganha a própria ocorrência, ligada às outras.';
     };
-    const adicionarEnvolvido = (focar) => {
-      $('#envolvidos').insertAdjacentHTML('beforeend', linhaEnvolvido());
+    // Novo estudante já vem com a turma do anterior; o cursor vai para o que falta preencher
+    const adicionarEnvolvido = (focar, turma, nome) => {
+      const ultima = $('#envolvidos .envolvido:last-child select');
+      const t = turma !== undefined ? turma : (ultima ? ultima.value : '');
+      $('#envolvidos').insertAdjacentHTML('beforeend', linhaEnvolvido(t, nome));
       renumerar();
-      if (focar) $('#envolvidos .envolvido:last-child select').focus();
+      if (focar) {
+        const nova = $('#envolvidos .envolvido:last-child');
+        ($('select', nova).value ? $('input', nova) : $('select', nova)).focus();
+      }
+    };
+    // Linhas vazias não contam (ex.: a primeira, antes de colar uma lista)
+    const removerVazias = () => {
+      $$('#envolvidos .envolvido').forEach((l) => { if (!$('input', l).value.trim()) l.remove(); });
     };
     $('#envolvidos').addEventListener('click', (e) => {
       const b = e.target.closest('.remover-envolvido');
@@ -706,7 +738,27 @@
       b.closest('.envolvido').remove();
       renumerar();
     });
+    $('#envolvidos').addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' || e.target.tagName !== 'INPUT') return;
+      e.preventDefault();
+      if (!e.target.value.trim()) return;
+      const linha = e.target.closest('.envolvido');
+      if (linha === $('#envolvidos .envolvido:last-child')) adicionarEnvolvido(true);
+      else $('input', linha.nextElementSibling).focus();
+    });
     $('#b-mais-aluno').addEventListener('click', () => adicionarEnvolvido(true));
+    $('#cl-adicionar').addEventListener('click', () => {
+      const turma = $('#cl-turma').value;
+      const nomes = [...new Set($('#cl-nomes').value.split(/\r?\n/).map((n) => n.trim().replace(/\s+/g, ' ')).filter(Boolean))];
+      $('#cl-erro').textContent = '';
+      if (!turma) { $('#cl-erro').textContent = 'Escolha a turma.'; return; }
+      if (!nomes.length) { $('#cl-erro').textContent = 'Cole pelo menos um nome.'; return; }
+      removerVazias();
+      nomes.forEach((n) => adicionarEnvolvido(false, turma, n));
+      $('#cl-nomes').value = '';
+      $('.colar-lista').open = false;
+      toast(`${nomes.length} estudante(s) adicionado(s).`);
+    });
     adicionarEnvolvido(false);
 
     const preencherTipos = () => {
@@ -1465,7 +1517,7 @@
           <div><label class="obrig" for="c-nome">Nome da escola</label><input id="c-nome" name="escola_nome" maxlength="150" required value="${esc(escola.escola_nome)}"></div>
           <div><label for="c-end">Endereço (aparece nos PDFs)</label><input id="c-end" name="escola_endereco" maxlength="200" value="${esc(escola.escola_endereco)}"></div>
           <div><label for="c-lim">Destacar estudantes a partir de quantas ocorrências</label><input id="c-lim" name="limite_atencao" type="number" min="1" max="100" value="${escola.limite_atencao}"></div>
-          <div><label for="c-faltas">Alertar quando o estudante passar de quantas faltas seguidas</label><input id="c-faltas" name="limite_faltas" type="number" min="1" max="30" value="${escola.limite_faltas || 3}"></div>
+          <div><label for="c-faltas">Alertar quando o estudante passar de quantas faltas (no mesmo dia ou em dias seguidos)</label><input id="c-faltas" name="limite_faltas" type="number" min="1" max="30" value="${escola.limite_faltas || 3}"></div>
         </div>
         <p class="erro" id="c-erro" role="alert"></p>
         <button class="btn" type="submit">Salvar dados da escola</button>
@@ -1750,12 +1802,12 @@
       <section class="folha">
         <h2 style="margin-top:0">Estudantes em alerta de faltas</h2>
         ${alertas.length ? `<div class="tabela-wrap"><table>
-          <thead><tr><th>Estudante</th><th>Turma</th><th class="num">Faltas seguidas</th><th>Período</th><th></th></tr></thead>
+          <thead><tr><th>Estudante</th><th>Turma</th><th class="num">Faltas</th><th>Quando</th><th></th></tr></thead>
           <tbody>${alertas.map((a, i) => `
             <tr>
               <td><strong>${esc(a.aluno)}</strong></td><td>${esc(a.turma)}</td>
               <td class="num"><strong class="atencao">${a.qtd}</strong></td>
-              <td>${dataBR(a.inicio)} a ${dataBR(a.fim)}</td>
+              <td>${(a.dias || 1) === 1 ? `No dia ${dataBR(a.fim)}` : `${a.dias} dias seguidos, de ${dataBR(a.inicio)} a ${dataBR(a.fim)}`}</td>
               <td>${a.caso_id
                 ? `<a class="btn sec peq" href="#/busca-ativa?caso=${a.caso_id}">Ver caso</a>`
                 : `<button class="btn peq" type="button" data-iniciar="${i}">Iniciar busca ativa</button>`}</td>
@@ -1796,7 +1848,9 @@
       const a = alertas[Number(b.dataset.iniciar)];
       b.disabled = true;
       try {
-        const id = await abrirCasoBusca(a.aluno, a.turma, `${a.qtd} faltas seguidas, de ${dataBR(a.inicio)} a ${dataBR(a.fim)}.`);
+        const id = await abrirCasoBusca(a.aluno, a.turma, (a.dias || 1) === 1
+          ? `${a.qtd} faltas no dia ${dataBR(a.fim)}.`
+          : `${a.qtd} faltas em ${a.dias} dias seguidos, de ${dataBR(a.inicio)} a ${dataBR(a.fim)}.`);
         toast('Busca ativa iniciada.');
         location.hash = '#/busca-ativa?caso=' + id;
       } catch (err) { toast(err.message); b.disabled = false; }
