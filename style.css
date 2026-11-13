@@ -486,3 +486,36 @@ a.numero:hover { transform: translateY(-2px); box-shadow: var(--sombra-forte); }
 select.u-funcao { min-width: 230px; }
 .tabela-wrap td { overflow-wrap: anywhere; }
 .tabela-wrap td:has(select.u-funcao) { min-width: 240px; }
+
+/* Registro: estudantes envolvidos */
+.envolvido { grid-template-columns: auto minmax(140px, 1fr) minmax(200px, 2fr) auto; position: relative; }
+.num-envolvido {
+  display: none; place-items: center; width: 2rem; height: 2rem; margin-bottom: 9px; border-radius: 50%;
+  background: var(--caneta-clara); color: var(--caneta); font-weight: 800; font-size: .95rem;
+}
+.envolvido.varios .num-envolvido { display: grid; }
+.remover-envolvido {
+  width: 44px; height: 44px; margin-bottom: 3px; border-radius: 50%; border: 2px solid var(--linha-forte);
+  background: var(--folha); color: var(--vermelho); font-size: 1.5rem; line-height: 1; cursor: pointer; font-family: inherit;
+}
+.remover-envolvido:hover { border-color: var(--vermelho); background: var(--vermelho-claro); }
+.btn-adicionar {
+  display: flex; align-items: center; justify-content: center; gap: .6rem; flex-wrap: wrap; width: 100%;
+  min-height: 56px; padding: .6rem 1rem; border: 2px dashed var(--caneta); border-radius: var(--raio);
+  background: var(--caneta-clara); color: var(--caneta); font: inherit; font-weight: 800; font-size: 1.05rem; cursor: pointer;
+}
+.btn-adicionar:hover { background: #dce7f8; }
+.btn-adicionar:disabled { opacity: .55; cursor: not-allowed; }
+.btn-adicionar .mais { display: inline-grid; place-items: center; width: 1.8rem; height: 1.8rem; border-radius: 50%; background: var(--caneta); color: #fff; font-size: 1.3rem; line-height: 1; }
+.btn-adicionar .dica-tecla { font-weight: 600; font-size: .88rem; color: var(--tinta-2); }
+.colar-lista { margin-top: .8rem; border: 1px solid var(--linha); border-radius: var(--raio); padding: .6rem 1rem; background: #fbf9f5; }
+.colar-lista summary { cursor: pointer; font-weight: 800; color: var(--caneta); min-height: 34px; display: flex; align-items: center; }
+.colar-lista[open] { padding-bottom: 1rem; }
+@media (max-width: 900px) {
+  .envolvido { grid-template-columns: 1fr; }
+  .num-envolvido { margin-bottom: 0; }
+  .remover-envolvido { position: absolute; top: .4rem; right: .4rem; }
+  .btn-adicionar .dica-tecla { display: none; }
+}
+.envolvido:not(.varios) { grid-template-columns: minmax(140px, 1fr) minmax(200px, 2fr) auto; }
+@media (max-width: 900px) { .envolvido:not(.varios) { grid-template-columns: 1fr; } }
