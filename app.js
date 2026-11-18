@@ -60,6 +60,21 @@
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   }
+  // Data N dias atrás, no formato AAAA-MM-DD
+  function diasAtras(n) {
+    const d = new Date();
+    d.setDate(d.getDate() - n);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+  function primeiroDoMes() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+  }
+  // "Quarta-feira, 18 de novembro de 2026" (primeira letra maiúscula)
+  function dataExtenso() {
+    const t = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    return t.charAt(0).toUpperCase() + t.slice(1);
+  }
   const carimbo = (s, grande) => `<span class="carimbo ${s}${grande ? ' grande' : ''}">${esc(STATUS[s])}</span>`;
   const opcoes = (mapa, sel, vazio) =>
     (vazio ? `<option value="">${esc(vazio)}</option>` : '') +
@@ -604,11 +619,31 @@
     const paginas = Math.max(1, Math.ceil(total / POR_PAGINA));
     const titulo = p.aluno ? `Histórico de ${p.aluno}${p.turma ? ` (${p.turma})` : ''}` : pode('ver_todas') ? 'Ocorrências' : 'Minhas ocorrências';
 
+    // Atalhos rápidos: montam o filtro pela URL (reaproveitam o filtro que já existe)
+    const CTRL = ['de', 'ate', 'status', 'categoria'];
+    const fixos = {};
+    if (p.q) fixos.q = p.q;
+    if (p.turma) fixos.turma = p.turma;
+    if (p.aluno) fixos.aluno = p.aluno;
+    const chips = [
+      ['Todas', {}],
+      ['Hoje', { de: hoje(), ate: hoje() }],
+      ['Últimos 7 dias', { de: diasAtras(7), ate: hoje() }],
+      ['Este mês', { de: primeiroDoMes(), ate: hoje() }],
+      ['Abertas', { status: 'ABERTA' }],
+      ['Em acompanhamento', { status: 'EM_ACOMPANHAMENTO' }],
+    ];
+    if (categoriasVisiveis(true).includes('CONVIVA')) chips.push(['Conviva', { categoria: 'CONVIVA' }]);
+    const chipAtivo = (cp) => CTRL.every((k) => (cp[k] || '') === (p[k] || ''));
+    const htmlChips = `<div class="chips">${chips.map(([t, cp]) =>
+      `<a class="chip${chipAtivo(cp) ? ' ativo' : ''}" href="#/ocorrencias?${qs({ ...fixos, ...cp })}">${esc(t)}</a>`).join('')}</div>`;
+
     conteudo.innerHTML = `
       <div class="cabecalho-pagina">
         <div><h1>${esc(titulo)}</h1><p class="muted">${total} registro(s)</p></div>
         ${pode('registrar') ? '<a class="btn" href="#/nova">Registrar ocorrência</a>' : ''}
       </div>
+      ${htmlChips}
       ${await sugestoes()}
       <form class="filtros" id="f-filtros">
         <div><label for="fq">Buscar estudante, turma ou texto</label><input id="fq" name="q" value="${esc(p.q || '')}" placeholder="Digite o nome do estudante"></div>
@@ -706,7 +741,7 @@
       `<a class="atalho${destaque ? ' destaque' : ''}" href="${href}"><strong>${esc(titulo)}</strong><span>${esc(texto)}</span></a>`;
     conteudo.innerHTML = `
       <div class="cabecalho-pagina"><div><h1>${saudacao}, ${esc(primeiroNome)}!</h1>
-        <p class="muted">O que você quer fazer agora?</p></div></div>
+        <p class="muted">${esc(dataExtenso())} · O que você quer fazer agora?</p></div></div>
       ${htmlAlertasFaltas(faltas, true)}
       <div class="atalhos">
         ${pode('registrar') ? atalho('#/nova', 'Registrar ocorrência', 'Anotar um fato novo, com fotos se precisar.', true) : ''}

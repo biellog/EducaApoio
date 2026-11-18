@@ -4,59 +4,60 @@
    Pensado para leitura fácil: letra grande, bom contraste,
    botões grandes e destaque claro no que está sendo usado.
    ===================================================================== */
-@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
 :root {
-  /* Lousa (menu e marca) */
-  --lousa: #1e4a3d;
-  --lousa-escura: #163a30;
-  --lousa-2: #2a5d4e;
-  --lousa-3: #3d7362;
-  --giz: #f1f6f2;
+  /* Verde institucional (menu e marca) */
+  --lousa: #123b33;
+  --lousa-escura: #0d2e28;
+  --lousa-2: #1c4e44;
+  --lousa-3: #2f6456;
+  --giz: #eef3f1;
 
-  /* Papel e tinta */
-  --papel: #f7f4ee;
-  --papel-2: #efeae0;
+  /* Fundo e tinta (cinza sóbrio, não creme) */
+  --papel: #f3f5f8;
+  --papel-2: #eaedf2;
   --folha: #ffffff;
-  --tinta: #1f2733;
-  --tinta-2: #535e6b;
-  --linha: #e3ddd1;
-  --linha-forte: #b9b2a5;
+  --tinta: #182230;
+  --tinta-2: #5a6572;
+  --linha: #e4e8ee;
+  --linha-forte: #c3cad4;
 
-  /* Ação principal (caneta azul) */
-  --caneta: #2459a8;
-  --caneta-escura: #1b4585;
-  --caneta-clara: #eaf1fb;
+  /* Ação principal */
+  --caneta: #2156c4;
+  --caneta-escura: #183f9a;
+  --caneta-clara: #eaf0fc;
 
   /* Situações */
-  --vermelho: #b42a20;
-  --vermelho-claro: #fdeeec;
-  --ambar: #8f5a00;
-  --ambar-claro: #fdf3df;
-  --verde: #2e7049;
-  --verde-claro: #e7f4ec;
+  --vermelho: #c22a21;
+  --vermelho-claro: #fcecea;
+  --ambar: #985f00;
+  --ambar-claro: #fbf1da;
+  --verde: #1f7a4d;
+  --verde-claro: #e6f3ec;
 
-  /* Destaque (marca-texto) */
-  --foco: #f4b740;
-  --foco-claro: #fff6df;
+  /* Destaque */
+  --foco: #e8a817;
+  --foco-claro: #fcf4e0;
 
-  --raio: 12px;
-  --raio-peq: 9px;
-  --sombra: 0 1px 2px rgba(31, 39, 51, .06), 0 4px 14px rgba(31, 39, 51, .06);
-  --sombra-forte: 0 2px 4px rgba(31, 39, 51, .08), 0 12px 28px rgba(31, 39, 51, .12);
+  --raio: 10px;
+  --raio-peq: 8px;
+  --sombra: 0 1px 2px rgba(16, 24, 40, .05), 0 1px 3px rgba(16, 24, 40, .06);
+  --sombra-forte: 0 4px 12px rgba(16, 24, 40, .08), 0 14px 30px rgba(16, 24, 40, .10);
 
-  font-family: "Nunito", "Segoe UI", Roboto, "Noto Sans", Ubuntu, Arial, sans-serif;
+  font-family: "Inter", "Segoe UI", Roboto, "Noto Sans", system-ui, Arial, sans-serif;
   color: var(--tinta);
   background: var(--papel);
-  line-height: 1.6;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
 }
 
 * { box-sizing: border-box; }
-html { font-size: 17px; -webkit-text-size-adjust: 100%; }
+html { font-size: 16px; -webkit-text-size-adjust: 100%; }
 body { margin: 0; background: var(--papel); }
-h1 { font-size: 1.85rem; line-height: 1.2; margin: 0 0 .3rem; font-weight: 800; letter-spacing: -.01em; }
-h2 { font-size: 1.28rem; margin: 1.7rem 0 .7rem; font-weight: 800; }
-h3 { font-size: 1.1rem; margin: 0 0 .45rem; font-weight: 800; }
+h1 { font-size: 1.7rem; line-height: 1.25; margin: 0 0 .3rem; font-weight: 700; letter-spacing: -.015em; }
+h2 { font-size: 1.22rem; margin: 1.7rem 0 .7rem; font-weight: 700; letter-spacing: -.01em; }
+h3 { font-size: 1.05rem; margin: 0 0 .45rem; font-weight: 600; }
 p { margin: 0 0 .8rem; }
 a { color: var(--caneta); text-underline-offset: 3px; }
 strong { font-weight: 800; }
@@ -271,7 +272,7 @@ label.btn { margin: .2rem 0 0; }
 .tabela-wrap { overflow-x: auto; background: var(--folha); border: 1px solid var(--linha); border-radius: var(--raio); box-shadow: var(--sombra); }
 table { width: 100%; border-collapse: collapse; font-size: 1rem; }
 th, td { text-align: left; padding: .85rem 1rem; border-bottom: 1px solid var(--linha); vertical-align: top; }
-th { font-size: .86rem; color: var(--tinta-2); font-weight: 800; background: #fbf9f5; text-transform: none; }
+th { font-size: .86rem; color: var(--tinta-2); font-weight: 800; background: #f6f8fa; text-transform: none; }
 tbody tr:last-child td { border-bottom: 0; }
 tbody tr.clicavel { cursor: pointer; transition: background .12s; }
 tbody tr.clicavel:hover { background: var(--caneta-clara); }
@@ -311,7 +312,7 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .envolvidos { display: flex; flex-direction: column; gap: .3rem; margin-bottom: .9rem; }
 .envolvido {
   display: grid; grid-template-columns: minmax(140px, 1fr) minmax(200px, 2fr) auto; gap: 0 1rem; align-items: end;
-  padding: .2rem .9rem .9rem; border-radius: var(--raio); background: #fbf9f5; border: 1px solid var(--linha);
+  padding: .2rem .9rem .9rem; border-radius: var(--raio); background: #f6f8fa; border: 1px solid var(--linha);
 }
 .envolvido .remover-envolvido { margin-bottom: 5px; }
 
@@ -320,12 +321,12 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .detalhe.sem-chat { grid-template-columns: minmax(0, 1fr); max-width: 880px; }
 .dados dl {
   display: grid; grid-template-columns: max-content 1fr; gap: .55rem 1.2rem; margin: 0;
-  background: #fbf9f5; border: 1px solid var(--linha); border-radius: var(--raio); padding: 1rem 1.2rem;
+  background: #f6f8fa; border: 1px solid var(--linha); border-radius: var(--raio); padding: 1rem 1.2rem;
 }
 .dados dt { color: var(--tinta-2); font-weight: 600; }
 .dados dd { margin: 0; font-weight: 800; }
 .texto-livre {
-  white-space: pre-wrap; background: #fbf9f5; border: 1px solid var(--linha); border-left: 5px solid var(--linha-forte);
+  white-space: pre-wrap; background: #f6f8fa; border: 1px solid var(--linha); border-left: 5px solid var(--linha-forte);
   padding: .85rem 1.05rem; margin: .3rem 0 1.1rem; border-radius: var(--raio-peq);
 }
 .linha-tempo { list-style: none; padding: 0; margin: 0; }
@@ -344,7 +345,7 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 #b-editar { margin-top: .3rem; }
 
 .chat { display: flex; flex-direction: column; height: 580px; position: sticky; top: 5.2rem; margin-bottom: 0; }
-.chat-msgs { flex: 1; overflow-y: auto; padding: .4rem; display: flex; flex-direction: column; gap: .65rem; background: #fbf9f5; border-radius: var(--raio); border: 1px solid var(--linha); }
+.chat-msgs { flex: 1; overflow-y: auto; padding: .4rem; display: flex; flex-direction: column; gap: .65rem; background: #f6f8fa; border-radius: var(--raio); border: 1px solid var(--linha); }
 .msg { max-width: 88%; padding: .65rem .9rem; border-radius: 14px 14px 14px 4px; background: var(--folha); border: 1px solid var(--linha); box-shadow: 0 1px 2px rgba(0, 0, 0, .04); }
 .msg.minha { align-self: flex-end; background: var(--caneta-clara); border-color: #cbd9f0; border-radius: 14px 14px 4px 14px; }
 .msg .quem { font-size: .82rem; color: var(--tinta-2); font-weight: 800; margin-bottom: .1rem; }
@@ -400,14 +401,14 @@ a.numero:hover { transform: translateY(-2px); box-shadow: var(--sombra-forte); }
 /* ---------- Funções, categorias e turmas ---------- */
 .permissoes { list-style: none; padding: 0; margin: .4rem 0 0; }
 .permissoes li { display: flex; gap: .75rem; align-items: flex-start; padding: .7rem .2rem; border-bottom: 1px solid var(--linha); }
-.permissoes li:hover { background: #fbf9f5; }
+.permissoes li:hover { background: #f6f8fa; }
 .permissoes input { margin-top: .2rem; flex: none; }
 .permissoes label { margin: 0; cursor: pointer; }
 .permissoes .muted { display: block; font-weight: 400; }
 .categorias-check { display: flex; gap: .6rem 1.4rem; flex-wrap: wrap; margin-top: .4rem; }
 .categorias-check label {
   display: flex; gap: .55rem; align-items: center; margin: 0; font-weight: 700; cursor: pointer; min-height: 44px;
-  padding: .3rem .8rem; border-radius: 999px; background: #fbf9f5; border: 1px solid var(--linha);
+  padding: .3rem .8rem; border-radius: 999px; background: #f6f8fa; border: 1px solid var(--linha);
 }
 .categorias-check label:has(input:checked) { background: var(--caneta-clara); border-color: var(--caneta); }
 .resumo-perm { font-size: .92rem; color: var(--tinta-2); }
@@ -508,7 +509,7 @@ select.u-funcao { min-width: 230px; }
 .btn-adicionar:disabled { opacity: .55; cursor: not-allowed; }
 .btn-adicionar .mais { display: inline-grid; place-items: center; width: 1.8rem; height: 1.8rem; border-radius: 50%; background: var(--caneta); color: #fff; font-size: 1.3rem; line-height: 1; }
 .btn-adicionar .dica-tecla { font-weight: 600; font-size: .88rem; color: var(--tinta-2); }
-.colar-lista { margin-top: .8rem; border: 1px solid var(--linha); border-radius: var(--raio); padding: .6rem 1rem; background: #fbf9f5; }
+.colar-lista { margin-top: .8rem; border: 1px solid var(--linha); border-radius: var(--raio); padding: .6rem 1rem; background: #f6f8fa; }
 .colar-lista summary { cursor: pointer; font-weight: 800; color: var(--caneta); min-height: 34px; display: flex; align-items: center; }
 .colar-lista[open] { padding-bottom: 1rem; }
 @media (max-width: 900px) {
@@ -675,4 +676,164 @@ html[data-modo="web"] .abas, html[data-modo="web"] .fab-registrar { display: non
 
 @media (prefers-reduced-motion: reduce) {
   html[data-modo="app"] .conteudo, .fab-registrar { animation: none; }
+}
+
+/* =====================================================================
+   REFINAMENTO PROFISSIONAL (acabamento)
+   Cosméticos valem em qualquer tela; estruturais só no computador
+   (min-width: 921px), para o visual de celular seguir intacto.
+   ===================================================================== */
+
+/* ---- Botões: planos e nítidos, sem sombra "fofa" ---- */
+.btn { box-shadow: none; font-weight: 600; border-width: 1px; letter-spacing: -.01em; transition: background .14s, border-color .14s; }
+.btn:active { transform: none; }
+.btn.sec { border-color: var(--linha-forte); color: var(--caneta); }
+.btn.sec:hover { background: var(--caneta-clara); border-color: var(--caneta); }
+
+/* ---- Campos: foco azul discreto (nada de amarelo) ---- */
+input, select, textarea { border-width: 1px; border-color: var(--linha-forte); border-radius: var(--raio-peq); transition: border-color .14s, box-shadow .14s; }
+input:focus, select:focus, textarea:focus { background: var(--folha); border-color: var(--caneta); box-shadow: 0 0 0 3px rgba(33, 86, 196, .16); outline: none; }
+label { font-weight: 600; }
+
+/* ---- Carimbo de situação: etiqueta plana, sem rotação ---- */
+.carimbo { transform: none; border-width: 1px; border-radius: 999px; font-weight: 600; font-size: .78rem; letter-spacing: .01em; padding: .16rem .6rem; }
+.carimbo.grande { font-size: .92rem; padding: .28rem .85rem; border-width: 1px; }
+
+/* ---- Sino de avisos ---- */
+.sino > button { border-width: 1px; font-weight: 600; box-shadow: none; }
+
+/* ---- Cartões: borda fina + sombra discreta, cantos coerentes ---- */
+.folha, .etapa, .numero, .atalho, .tabela-wrap, .alerta-faltas { box-shadow: var(--sombra); }
+.folha, .etapa { border-radius: var(--raio); }
+
+@media (min-width: 921px) {
+  body { background: var(--papel); }
+
+  /* ---- Barra lateral: limpa, sem bolinhas, ativo com barra de acento ---- */
+  .lateral { background: linear-gradient(180deg, var(--lousa), var(--lousa-escura)); padding: 1.3rem .8rem 1.1rem; }
+  .lateral .marca { font-size: 1.4rem; margin: 0 .5rem .05rem; letter-spacing: -.02em; }
+  .lateral .escola { font-size: .78rem; color: #a9c2ba; margin: 0 .5rem 1.4rem; }
+  .lateral nav a {
+    padding: .55rem .75rem; border-radius: var(--raio-peq); font-size: .94rem; font-weight: 500;
+    color: #d4e2dc; margin-bottom: .1rem; border-left: 0; position: relative;
+  }
+  .lateral nav a::before { display: none; }
+  .lateral nav a .ico { display: none; }
+  .lateral nav a:hover { background: rgba(255, 255, 255, .08); color: #fff; }
+  .lateral nav a.ativo {
+    background: rgba(255, 255, 255, .12); color: #fff; font-weight: 600; box-shadow: none;
+  }
+  .lateral nav a.ativo::after {
+    content: ""; position: absolute; left: -.8rem; top: 50%; transform: translateY(-50%);
+    width: 3px; height: 20px; border-radius: 0 3px 3px 0; background: var(--foco);
+  }
+  .rodape-lateral { border-top: 1px solid rgba(255, 255, 255, .12); padding-top: .9rem; }
+  .rodape-lateral strong { font-size: .95rem; }
+  .link-lateral { color: #a9c2ba; }
+  .link-lateral:hover { color: #fff; }
+
+  /* ---- Barra superior discreta ---- */
+  .topo { background: var(--folha); border-bottom: 1px solid var(--linha); padding: .7rem 1.8rem; }
+  .conteudo { padding: 1.8rem 2rem 2.5rem; }
+
+  /* ---- Início: atalhos iguais, ícone à esquerda e texto à direita ---- */
+  .atalhos { grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: .9rem; }
+  .atalho {
+    display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto;
+    column-gap: .9rem; align-items: center; min-height: 0; padding: 1.1rem 1.2rem;
+    border: 1px solid var(--linha); border-radius: var(--raio); background: var(--folha);
+  }
+  .atalho::before {
+    position: static; transform: none; width: 2.6rem; height: 2.6rem; border-radius: 9px;
+    font-size: 1.3rem; flex: none; grid-row: 1 / 3; align-self: center;
+  }
+  .atalho strong { grid-column: 2; font-size: 1.02rem; font-weight: 600; }
+  .atalho span { grid-column: 2; font-size: .86rem; line-height: 1.35; }
+  .atalho:hover { transform: translateY(-1px); border-color: var(--linha-forte); box-shadow: var(--sombra-forte); }
+  .atalho.destaque:hover { border-color: var(--caneta-escura); }
+
+  /* ---- Números/KPIs mais sóbrios ---- */
+  .numero { border: 1px solid var(--linha); border-radius: var(--raio); padding: 1rem 1.2rem; }
+  .numero b { font-weight: 700; letter-spacing: -.02em; }
+  .numero span { font-weight: 500; }
+
+  /* ---- Etapas do formulário: cartão leve, passo claro ---- */
+  .etapa { border: 1px solid var(--linha); padding: 1.1rem 1.4rem 1.3rem; }
+  .etapa legend { font-size: 1.05rem; font-weight: 700; padding: 0 .5rem 0 .2rem; background: none; }
+  .etapa legend .num { width: 1.8rem; height: 1.8rem; font-size: .9rem; font-weight: 700; box-shadow: none; }
+  .etapa:focus-within { border-color: var(--caneta); box-shadow: 0 0 0 3px rgba(33, 86, 196, .1); }
+  .etapa:focus-within legend .num { box-shadow: none; }
+
+  /* ---- Tabelas: cabeçalho discreto, linhas arejadas ---- */
+  .tabela-wrap { border: 1px solid var(--linha); border-radius: var(--raio); }
+  th { font-size: .74rem; text-transform: uppercase; letter-spacing: .04em; color: var(--tinta-2); background: #fafbfc; font-weight: 600; padding: .7rem 1rem; }
+  td { padding: .8rem 1rem; }
+  tbody tr:nth-child(even) { background: transparent; }
+  tbody tr.clicavel:hover { background: var(--caneta-clara); }
+
+  /* ---- Filtros: cartão enxuto ---- */
+  .filtros { border: 1px solid var(--linha); border-radius: var(--raio); padding: 1rem 1.1rem; box-shadow: var(--sombra); }
+
+  /* ---- Gráfico de barras do painel mais sóbrio ---- */
+  .barras .valor { background: var(--caneta); }
+  .barras .trilho { background: var(--papel-2); }
+}
+
+/* Botões pequenos (ações de tabela) não quebram no meio da palavra */
+.btn.peq { white-space: nowrap; }
+
+/* =====================================================================
+   NOVIDADES: atalhos de filtro, tela de entrada, telas vazias e polimento
+   ===================================================================== */
+
+/* ---- Atalhos rápidos de filtro (chips) ---- */
+.chips { display: flex; flex-wrap: wrap; gap: .5rem; margin: 0 0 1rem; }
+.chip {
+  display: inline-flex; align-items: center; min-height: 36px; padding: .3rem .9rem;
+  border-radius: 999px; border: 1px solid var(--linha-forte); background: var(--folha);
+  color: var(--tinta-2); text-decoration: none; font-size: .88rem; font-weight: 600;
+  transition: background .14s, border-color .14s, color .14s;
+}
+.chip:hover { border-color: var(--caneta); color: var(--caneta); background: var(--caneta-clara); }
+.chip.ativo { background: var(--caneta); border-color: var(--caneta); color: #fff; }
+
+/* ---- Barra de rolagem discreta ---- */
+* { scrollbar-width: thin; scrollbar-color: #c4ccd6 transparent; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: #c4ccd6; border-radius: 999px; border: 2px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover { background: #aab4c0; background-clip: content-box; }
+.lateral::-webkit-scrollbar-thumb { background: rgba(255,255,255,.22); background-clip: content-box; }
+
+/* ---- Tela de entrada mais caprichada ---- */
+.tela-login {
+  background:
+    radial-gradient(1200px 500px at 80% -10%, rgba(255,255,255,.06), transparent),
+    linear-gradient(160deg, var(--lousa-2), var(--lousa-escura));
+}
+.cartao-login { border-top: 4px solid var(--foco); box-shadow: 0 24px 64px rgba(0,0,0,.28); }
+.marca { color: var(--lousa); }
+
+/* ---- Rodapé discreto da área de conteúdo ---- */
+.conteudo::after {
+  content: "EducaApoio · registro de ocorrências escolares";
+  display: block; margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid var(--linha);
+  color: var(--tinta-2); font-size: .8rem; text-align: center; opacity: .8;
+}
+
+@media (min-width: 921px) {
+  /* ---- Tela vazia (nenhum registro) centralizada e amigável ---- */
+  .folha > p:first-child:last-of-type { color: var(--tinta-2); }
+
+  /* ---- Linhas da tabela com seta sutil ao passar o mouse ---- */
+  tbody tr.clicavel { position: relative; }
+  tbody tr.clicavel td:last-child { position: relative; }
+
+  /* ---- Cabeçalho de página com um respiro a mais ---- */
+  .cabecalho-pagina { margin-bottom: 1.1rem; }
+}
+
+/* No celular, o rodapé e os chips ficam mais compactos */
+@media (max-width: 920px) {
+  html[data-modo="app"] .conteudo::after { margin-top: 1.5rem; font-size: .75rem; }
+  html[data-modo="app"] .chip { min-height: 40px; }
 }
