@@ -519,3 +519,160 @@ select.u-funcao { min-width: 230px; }
 }
 .envolvido:not(.varios) { grid-template-columns: minmax(140px, 1fr) minmax(200px, 2fr) auto; }
 @media (max-width: 900px) { .envolvido:not(.varios) { grid-template-columns: 1fr; } }
+
+/* Dicas de segurança em Minha conta */
+.dicas-seguranca { background: var(--foco-claro); border: 1px solid #ecd9a6; border-radius: var(--raio); padding: .8rem 1.2rem; margin-top: 1rem; }
+.dicas-seguranca h2 { font-size: 1.1rem; margin-top: 0; }
+.dicas-seguranca ul { margin: 0; padding-left: 1.2rem; }
+.dicas-seguranca li { margin: .45rem 0; }
+
+/* =====================================================================
+   Ícones do menu: escondidos no visual de computador (a lateral já usa
+   a bolinha ::before). Aparecem no visual de aplicativo (celular).
+   ===================================================================== */
+.lateral nav a .ico { display: none; }
+.trocar-modo { display: none; }
+
+/* =====================================================================
+   MODO APLICATIVO (celular): abas embaixo, telas deslizando, animações.
+   Tudo aqui só vale quando <html data-modo="app">. O modo computador
+   fica intocado.
+   ===================================================================== */
+html[data-modo="app"] {
+  --raio: 18px;
+  --raio-peq: 12px;
+}
+html[data-modo="app"] body { background: var(--papel); }
+
+/* Mostra o botão de trocar visual (nos dois modos, mas aqui ele é útil) */
+.trocar-modo {
+  display: flex; align-items: center; justify-content: center; gap: .5rem;
+  width: 100%; min-height: 44px; margin-top: .7rem;
+  background: transparent; border: 1px solid rgba(255,255,255,.25); color: #fff;
+  border-radius: var(--raio-peq); cursor: pointer; font: inherit; font-weight: 700; font-size: .9rem;
+}
+.trocar-modo:hover { background: rgba(255,255,255,.1); }
+html[data-modo="app"] .trocar-modo .ico { font-size: 1rem; }
+
+@media (max-width: 920px) {
+  html[data-modo="app"] {
+
+  /* ---- Estrutura: conteúdo em tela cheia, lateral vira gaveta ---- */
+  .app { display: block; }
+  .principal { min-width: 0; }
+  .conteudo { padding: 1rem 1rem calc(76px + env(safe-area-inset-bottom, 0px)); max-width: none; }
+
+  /* ---- Barra superior enxuta, com a marca ---- */
+  .topo {
+    padding: .5rem 1rem; gap: .6rem; justify-content: space-between;
+    background: linear-gradient(180deg, var(--lousa), var(--lousa-escura)); border: 0; color: #fff;
+    position: sticky; top: 0;
+  }
+  .topo::before {
+    content: "EducaApoio"; font-weight: 800; font-size: 1.15rem; color: #fff; margin-right: auto;
+    letter-spacing: -.01em;
+  }
+  .menu-movel { display: none; }
+  .sino > button {
+    background: rgba(255,255,255,.14); border-color: transparent; color: #fff; min-height: 42px;
+    padding: .3rem .7rem;
+  }
+  .sino > button::before { color: var(--foco); }
+
+  /* ---- Lateral vira uma gaveta que desliza da esquerda ---- */
+  .lateral {
+    position: fixed; inset: 0 auto 0 0; width: 84vw; max-width: 320px; z-index: 60;
+    transform: translateX(-102%); transition: transform .28s cubic-bezier(.4,0,.2,1);
+    padding-bottom: calc(1.2rem + env(safe-area-inset-bottom, 0px));
+  }
+  .lateral.aberta { transform: none; box-shadow: 0 0 0 100vmax rgba(0,0,0,.45); }
+  .lateral nav a { padding: .85rem .9rem; font-size: 1.05rem; }
+  .lateral nav a::before { display: none; }
+  .lateral nav a .ico { display: inline-block; font-size: 1.25rem; width: 1.6rem; text-align: center; }
+  .lateral nav a.ativo .ico { filter: none; }
+
+  /* ---- Barra de abas inferior (estilo app) ---- */
+  .abas {
+    display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 55;
+    background: rgba(255,255,255,.96); backdrop-filter: blur(12px);
+    border-top: 1px solid var(--linha);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    box-shadow: 0 -4px 20px rgba(31,39,51,.08);
+  }
+  .abas a, .abas button {
+    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+    min-height: 60px; padding: .4rem 0; border: 0; background: none; cursor: pointer;
+    font: inherit; font-size: .72rem; font-weight: 700; color: var(--tinta-2); text-decoration: none;
+    position: relative; transition: color .15s;
+  }
+  .abas .ico { font-size: 1.4rem; line-height: 1; transition: transform .2s; }
+  .abas a.ativo { color: var(--caneta); }
+  .abas a.ativo .ico { transform: translateY(-2px) scale(1.12); }
+  .abas a.ativo::before {
+    content: ""; position: absolute; top: 0; width: 28px; height: 3px; border-radius: 0 0 4px 4px;
+    background: var(--caneta);
+  }
+  .abas a:active .ico, .abas button:active .ico { transform: scale(.88); }
+
+  /* ---- Troca de tela com um leve deslizar ---- */
+  .conteudo { animation: entra-tela .32s cubic-bezier(.2,.7,.3,1); }
+
+  /* ---- Cartões mais "app": cantos redondos, toque com resposta ---- */
+  .folha, .etapa, .atalho, .numero, .alerta-faltas, .zona-perigo { border-radius: var(--raio); }
+  tbody tr.clicavel:active, .atalho:active, .numero:active { transform: scale(.99); }
+
+  /* ---- Lista de ocorrências vira cartões, não tabela apertada ---- */
+  .tabela-wrap { border: 0; background: none; box-shadow: none; overflow: visible; }
+  .tabela-wrap table, .tabela-wrap thead, .tabela-wrap tbody, .tabela-wrap tr, .tabela-wrap td { display: block; }
+  .tabela-wrap thead { display: none; }
+  .tabela-wrap tr {
+    background: var(--folha); border: 1px solid var(--linha); border-radius: var(--raio);
+    padding: .9rem 1rem; margin-bottom: .7rem; box-shadow: var(--sombra);
+  }
+  .tabela-wrap td { border: 0; padding: .12rem 0; text-align: left; display: flex; gap: .6rem; align-items: baseline; }
+  .tabela-wrap td.num { text-align: left; }
+  /* rótulo à esquerda, largura fixa; valor ao lado (uma linha por campo) */
+  .tabela-wrap td[data-rot]::before {
+    content: attr(data-rot); flex: 0 0 104px; color: var(--tinta-2);
+    font-size: .74rem; font-weight: 700; text-transform: uppercase; letter-spacing: .02em;
+  }
+  .tabela-wrap td[data-rot=""]::before, .tabela-wrap td:not([data-rot])::before { content: none; }
+  /* primeira célula (nome/data) em destaque, ocupando a linha toda */
+  .tabela-wrap tr > td:first-child { display: block; font-size: 1.1rem; font-weight: 800; margin-bottom: .2rem; }
+  .tabela-wrap tr > td:first-child[data-rot]::before { display: none; }
+
+  /* ---- Botão flutuante de registrar (quando pode) ---- */
+  .fab-registrar {
+    display: flex; position: fixed; right: 1rem; bottom: calc(74px + env(safe-area-inset-bottom, 0px));
+    z-index: 54; width: 58px; height: 58px; border-radius: 50%; align-items: center; justify-content: center;
+    background: var(--caneta); color: #fff; border: 0; font-size: 2rem; line-height: 1; cursor: pointer;
+    box-shadow: 0 6px 20px rgba(36,89,168,.45); text-decoration: none;
+    animation: surge-fab .3s cubic-bezier(.2,1.3,.4,1);
+  }
+  .fab-registrar:active { transform: scale(.92); }
+
+  /* ---- Toast um pouco acima das abas ---- */
+  .toast { bottom: calc(76px + env(safe-area-inset-bottom, 0px)); left: 1rem; right: 1rem; max-width: none; }
+
+  /* ---- Filtros empilhados e confortáveis ---- */
+  .filtros { grid-template-columns: 1fr 1fr; gap: .6rem; }
+  .filtros > div:first-child { grid-column: 1 / -1; }
+
+  /* ---- Detalhe e gráficos numa coluna ---- */
+  .detalhe, .graficos, .grade-2, .grade-3 { grid-template-columns: 1fr; }
+  .numeros, .numeros-2 { grid-template-columns: 1fr 1fr; }
+  .chat { position: static; height: 460px; }
+
+  }
+}
+
+@keyframes entra-tela { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }
+@keyframes surge-fab { from { opacity: 0; transform: scale(.4); } to { opacity: 1; transform: none; } }
+
+/* No computador, a barra de abas e o botão flutuante nunca aparecem */
+html[data-modo="web"] .abas, html[data-modo="web"] .fab-registrar { display: none !important; }
+.abas, .fab-registrar { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-modo="app"] .conteudo, .fab-registrar { animation: none; }
+}

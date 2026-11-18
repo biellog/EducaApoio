@@ -2,6 +2,30 @@
   'use strict';
 
   /* ================= Utilitários ================= */
+  /* ========= Modo de visual: aplicativo (celular) ou computador ========= */
+  // Detecta o aparelho; a pessoa pode trocar à mão, e a escolha fica salva.
+  function celularProvavel() {
+    const toque = window.matchMedia('(pointer: coarse)').matches;
+    const estreito = window.matchMedia('(max-width: 820px)').matches;
+    const ua = /Android|iPhone|iPod|Mobile|Windows Phone/i.test(navigator.userAgent || '');
+    return (toque && estreito) || (ua && estreito);
+  }
+  function modoSalvo() {
+    try { return localStorage.getItem('educaapoio-modo'); } catch (e) { return null; }
+  }
+  function aplicarModo(modo) {
+    document.documentElement.setAttribute('data-modo', modo);
+    try { localStorage.setItem('educaapoio-modo', modo); } catch (e) { /* sem armazenamento */ }
+    const b = document.getElementById('trocar-modo');
+    if (b) b.querySelector('.rot-modo').textContent = modo === 'app' ? 'Ver como no computador' : 'Ver como no celular';
+  }
+  // Aplica cedo (antes de desenhar) para não "piscar" o visual errado
+  aplicarModo(modoSalvo() || (celularProvavel() ? 'app' : 'web'));
+  function alternarModo() {
+    aplicarModo(document.documentElement.getAttribute('data-modo') === 'app' ? 'web' : 'app');
+    window.scrollTo({ top: 0 });
+  }
+
   const $ = (sel, raiz) => (raiz || document).querySelector(sel);
   const $$ = (sel, raiz) => Array.from((raiz || document).querySelectorAll(sel));
   const conteudo = $('#conteudo');
@@ -324,6 +348,17 @@
   function iniciarApp() {
     $('#tela-login').classList.add('oculto');
     $('#tela-app').classList.remove('oculto');
+    // Botão de trocar visual (celular <-> computador), no rodapé da lateral
+    if (!$('#trocar-modo')) {
+      const botao = document.createElement('button');
+      botao.id = 'trocar-modo';
+      botao.type = 'button';
+      botao.className = 'trocar-modo';
+      botao.innerHTML = '<span class="ico" aria-hidden="true">🔁</span> <span class="rot-modo"></span>';
+      botao.addEventListener('click', alternarModo);
+      $('#sair').insertAdjacentElement('beforebegin', botao);
+    }
+    aplicarModo(document.documentElement.getAttribute('data-modo'));
     montarMenu();
     carregarNotificacoes();
     conectarAvisos();
@@ -332,32 +367,57 @@
     else rotear();
   }
 
-  function montarMenu() {
-    const itens = [
-      ['#/inicio', 'Início', true],
-      ['#/ocorrencias', pode('ver_todas') ? 'Ocorrências' : 'Minhas ocorrências', true],
-      ['#/nova', 'Registrar ocorrência', pode('registrar')],
-      ['#/painel', 'Painel', pode('painel')],
-      ['#/relatorios', 'Relatórios', pode('relatorios')],
-      ['#/turmas', 'Turmas', pode('turmas')],
-      ['#/busca-ativa', 'Busca ativa', eu.buscaAtiva],
-      ['#/usuarios', 'Usuários', ehDirecao()],
-      ['#/funcoes', 'Funções de acesso', ehDirecao()],
-      ['#/configuracoes', 'Configurações', pode('configuracoes')],
-      ['#/auditoria', 'Auditoria', pode('auditoria')],
-      ['#/conta', 'Minha conta', true],
+  // [hash, texto, mostrar?, ícone, curto p/ aba, é aba principal no celular]
+  function itensMenu() {
+    return [
+      ['#/inicio', 'Início', true, '🏠', 'Início', true],
+      ['#/ocorrencias', pode('ver_todas') ? 'Ocorrências' : 'Minhas ocorrências', true, '📋', 'Registros', true],
+      ['#/nova', 'Registrar ocorrência', pode('registrar'), '✏️', 'Registrar', false],
+      ['#/painel', 'Painel', pode('painel'), '📊', 'Painel', pode('painel')],
+      ['#/relatorios', 'Relatórios', pode('relatorios'), '📄', 'Relatórios', false],
+      ['#/turmas', 'Turmas', pode('turmas'), '🏫', 'Turmas', false],
+      ['#/busca-ativa', 'Busca ativa', eu.buscaAtiva, '☎️', 'Busca', false],
+      ['#/usuarios', 'Usuários', ehDirecao(), '👥', 'Usuários', false],
+      ['#/funcoes', 'Funções de acesso', ehDirecao(), '🔑', 'Funções', false],
+      ['#/configuracoes', 'Configurações', pode('configuracoes'), '⚙️', 'Config.', false],
+      ['#/auditoria', 'Auditoria', pode('auditoria'), '🔎', 'Auditoria', false],
+      ['#/conta', 'Minha conta', true, '👤', 'Conta', false],
     ];
-    $('#menu').innerHTML = itens.filter((i) => i[2]).map(([h, t]) => `<a href="${h}">${esc(t)}</a>`).join('');
+  }
+  function montarMenu() {
+    const itens = itensMenu().filter((i) => i[2]);
+    $('#menu').innerHTML = itens.map(([h, t, , ic]) => `<a href="${h}"><span class="ico" aria-hidden="true">${ic}</span><span class="rot-menu">${esc(t)}</span></a>`).join('');
     $('#nome-usuario').textContent = eu.nome;
     if (!$('#link-alterar-nome')) {
       $('#perfil-usuario').insertAdjacentHTML('afterend', '<a id="link-alterar-nome" class="link-lateral" href="#/conta?editar=nome">alterar nome</a>');
     }
     $('#perfil-usuario').textContent = eu.funcao.nome;
+    montarAbas(itens);
+  }
+
+  // Barra de abas do celular: as abas principais + "Menu" (abre a lateral com o resto)
+  function montarAbas(itens) {
+    let barra = $('#abas');
+    if (!barra) {
+      barra = document.createElement('nav');
+      barra.id = 'abas';
+      barra.className = 'abas';
+      barra.setAttribute('aria-label', 'Navegação');
+      $('.app').appendChild(barra);
+    }
+    const principais = itens.filter((i) => i[5]).slice(0, 4);
+    barra.innerHTML = principais.map(([h, , , ic, curto]) =>
+      `<a href="${h}" data-base="${h}"><span class="ico" aria-hidden="true">${ic}</span><span>${esc(curto)}</span></a>`).join('')
+      + `<button type="button" id="aba-menu"><span class="ico" aria-hidden="true">☰</span><span>Menu</span></button>`;
+    $('#aba-menu').onclick = () => $('#lateral').classList.toggle('aberta');
   }
   function marcarMenu() {
-    const base = location.hash.split('?')[0];
+    const base = location.hash.split('?')[0] || '#/inicio';
     $$('#menu a').forEach((a) => a.classList.toggle('ativo', a.getAttribute('href') === base));
+    $$('#abas a').forEach((a) => a.classList.toggle('ativo', a.dataset.base === base));
     $('#lateral').classList.remove('aberta');
+    document.body.classList.remove('menu-aberto');
+    window.scrollTo({ top: 0 });
   }
   $('#abrir-menu').addEventListener('click', () => $('#lateral').classList.toggle('aberta'));
 
@@ -481,6 +541,35 @@
       conteudo.innerHTML = `<p class="erro">${esc(erroPT(err))}</p>`;
     } finally {
       conteudo.focus({ preventScroll: true });
+      adaptarCelular();
+    }
+  }
+
+  // Ajustes do visual de aplicativo, refeitos a cada tela (inofensivos no computador)
+  function adaptarCelular() {
+    // 1. Rótulo em cada célula, para a lista virar cartões legíveis no celular
+    $$('.tabela-wrap table', conteudo).forEach((tab) => {
+      const cabs = $$('thead th', tab).map((th) => th.textContent.trim());
+      if (!cabs.length) return;
+      $$('tbody tr', tab).forEach((tr) => {
+        $$(':scope > td', tr).forEach((td, i) => {
+          if (!td.hasAttribute('data-rot')) td.setAttribute('data-rot', cabs[i] || '');
+        });
+      });
+    });
+    // 2. Botão flutuante de registrar, só quando a pessoa pode e não está já na tela de registro
+    const existe = $('#fab-registrar');
+    const mostrar = pode('registrar') && !['#/nova'].includes(location.hash.split('?')[0]);
+    if (mostrar && !existe) {
+      const a2 = document.createElement('a');
+      a2.id = 'fab-registrar';
+      a2.className = 'fab-registrar';
+      a2.href = '#/nova';
+      a2.setAttribute('aria-label', 'Registrar ocorrência');
+      a2.textContent = '+';
+      $('.app').appendChild(a2);
+    } else if (!mostrar && existe) {
+      existe.remove();
     }
   }
 
@@ -869,7 +958,7 @@
     ]);
     // Links temporários (1 hora) para mostrar os arquivos privados
     if (anexos.length) {
-      const urls = await sb.storage.from('anexos').createSignedUrls(anexos.map((a) => a.caminho), 3600);
+      const urls = await sb.storage.from('anexos').createSignedUrls(anexos.map((a) => a.caminho), 900);
       (urls.data || []).forEach((u, i) => { if (anexos[i]) anexos[i].url = u.signedUrl; });
     }
     if (!atualizacao) {
@@ -2213,7 +2302,15 @@
           <dt>Função</dt><dd>${esc(eu.funcao.nome)}</dd>
           <dt>E-mail de acesso</dt><dd>${esc(eu.email)}</dd>
         </dl></div>
-        <p class="muted" style="margin-top:1rem">Você entra digitando este e-mail e o código que chega nele. Proteja a sua caixa de e-mail: quem tiver acesso a ela consegue entrar no EducaApoio.</p>
+        <div class="dicas-seguranca">
+          <h2 style="margin-top:1.2rem">Mantenha o acesso seguro</h2>
+          <ul>
+            <li><strong>Sempre clique em Sair</strong> ao terminar, principalmente em computador usado por outras pessoas.</li>
+            <li><strong>Proteja o seu e-mail.</strong> Você entra com o código que chega nele, então quem abrir a sua caixa de e-mail consegue entrar no EducaApoio. De preferência, ative a verificação em duas etapas no próprio provedor de e-mail.</li>
+            <li><strong>Não compartilhe o código</strong> de acesso com ninguém. A escola nunca vai pedir esse código.</li>
+            <li>Os dados são de estudantes: evite tirar print ou baixar arquivos sem necessidade.</li>
+          </ul>
+        </div>
         <h2>Som dos avisos</h2>
         <p class="muted">Toca um som curto quando chega um aviso novo, como uma ocorrência registrada ou um comentário.</p>
         <div class="acoes" style="margin-top:.4rem">
