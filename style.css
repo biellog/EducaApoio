@@ -40,28 +40,28 @@
   --foco: #e8a817;
   --foco-claro: #fcf4e0;
 
-  --raio: 10px;
-  --raio-peq: 8px;
-  --sombra: 0 1px 2px rgba(16, 24, 40, .05), 0 1px 3px rgba(16, 24, 40, .06);
-  --sombra-forte: 0 4px 12px rgba(16, 24, 40, .08), 0 14px 30px rgba(16, 24, 40, .10);
+  --raio: 14px;
+  --raio-peq: 10px;
+  --sombra: 0 1px 2px rgba(16, 24, 40, .06), 0 4px 12px rgba(16, 24, 40, .07);
+  --sombra-forte: 0 6px 16px rgba(16, 24, 40, .10), 0 18px 36px rgba(16, 24, 40, .12);
 
   font-family: "Inter", "Segoe UI", Roboto, "Noto Sans", system-ui, Arial, sans-serif;
   color: var(--tinta);
   background: var(--papel);
-  line-height: 1.55;
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
 }
 
 * { box-sizing: border-box; }
-html { font-size: 16px; -webkit-text-size-adjust: 100%; }
+html { font-size: 18.5px; -webkit-text-size-adjust: 100%; }
 body { margin: 0; background: var(--papel); }
-h1 { font-size: 1.7rem; line-height: 1.25; margin: 0 0 .3rem; font-weight: 700; letter-spacing: -.015em; }
-h2 { font-size: 1.22rem; margin: 1.7rem 0 .7rem; font-weight: 700; letter-spacing: -.01em; }
-h3 { font-size: 1.05rem; margin: 0 0 .45rem; font-weight: 600; }
-p { margin: 0 0 .8rem; }
+h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 .35rem; font-weight: 800; letter-spacing: -.02em; }
+h2 { font-size: 1.4rem; margin: 1.8rem 0 .8rem; font-weight: 700; letter-spacing: -.01em; }
+h3 { font-size: 1.15rem; margin: 0 0 .5rem; font-weight: 700; }
+p { margin: 0 0 .85rem; }
 a { color: var(--caneta); text-underline-offset: 3px; }
-strong { font-weight: 800; }
-.muted { color: var(--tinta-2); font-size: .95rem; }
+strong { font-weight: 700; }
+.muted { color: var(--tinta-2); font-size: 1rem; }
 .oculto { display: none !important; }
 ::selection { background: var(--foco-claro); }
 
@@ -836,4 +836,87 @@ label { font-weight: 600; }
 @media (max-width: 920px) {
   html[data-modo="app"] .conteudo::after { margin-top: 1.5rem; font-size: .75rem; }
   html[data-modo="app"] .chip { min-height: 40px; }
+}
+
+/* =====================================================================
+   MAIOR, MAIS LEGÍVEL E MAIS ANIMADO
+   (pedido do usuário: profissional, maior, fácil de enxergar, com vida)
+   ===================================================================== */
+
+/* ---- Controles maiores e com toque confortável ---- */
+.btn { min-height: 54px; padding: .65rem 1.5rem; font-size: 1.02rem; font-weight: 700; border-radius: var(--raio-peq);
+  transition: background .15s, border-color .15s, transform .12s, box-shadow .15s; }
+.btn:hover { transform: translateY(-1px); box-shadow: var(--sombra); }
+.btn:active { transform: translateY(0); box-shadow: none; }
+.btn.grande { min-height: 62px; font-size: 1.12rem; }
+.btn.peq { min-height: 44px; font-size: .96rem; padding: .4rem 1rem; }
+input, select, textarea { min-height: 56px; font-size: 1.05rem; padding: .7rem .9rem; border-radius: var(--raio-peq); }
+textarea { min-height: 9rem; }
+label { font-size: 1.05rem; font-weight: 700; margin-top: 1.1rem; }
+
+/* ---- Atalhos de filtro (chips) maiores ---- */
+.chip { min-height: 44px; font-size: .98rem; padding: .4rem 1.15rem; transition: background .15s, border-color .15s, color .15s, transform .12s; }
+.chip:hover { transform: translateY(-1px); }
+
+/* ---- Etiquetas de situação maiores ---- */
+.carimbo { font-size: .86rem; padding: .22rem .75rem; }
+.carimbo.grande { font-size: 1.02rem; padding: .34rem 1rem; }
+
+/* ---- Animação de entrada das telas (leve, uma vez por tela) ---- */
+@keyframes surgir { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+.conteudo > * { animation: surgir .42s cubic-bezier(.2,.7,.3,1) both; }
+.conteudo > *:nth-child(1) { animation-delay: .02s; }
+.conteudo > *:nth-child(2) { animation-delay: .08s; }
+.conteudo > *:nth-child(3) { animation-delay: .14s; }
+.conteudo > *:nth-child(4) { animation-delay: .20s; }
+.conteudo > *:nth-child(5) { animation-delay: .26s; }
+
+/* ---- Alerta de faltas: pulso suave para chamar atenção ---- */
+@keyframes pulso-alerta { 0%,100% { box-shadow: var(--sombra); } 50% { box-shadow: 0 0 0 4px rgba(194,42,33,.14), var(--sombra-forte); } }
+.alerta-faltas { animation: surgir .42s both, pulso-alerta 2.6s ease-in-out .5s 3; }
+
+/* ---- Números do painel: transição suave quando a contagem anima (JS) ---- */
+.numero b { transition: color .2s; }
+
+@media (min-width: 921px) {
+  .conteudo { padding: 2rem 2.4rem 3rem; }
+
+  /* ---- Barra lateral maior e mais legível ---- */
+  .lateral { width: 272px; }
+  .app { grid-template-columns: 272px 1fr; }
+  .lateral .marca { font-size: 1.55rem; }
+  .lateral .escola { font-size: .86rem; }
+  .lateral nav a { font-size: 1.04rem; padding: .7rem .85rem; }
+  .rodape-lateral strong { font-size: 1.05rem; }
+
+  /* ---- Atalhos do Início: grandes, com ícone destacado ---- */
+  .atalhos { grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 1.1rem; }
+  .atalho { padding: 1.4rem 1.5rem; column-gap: 1.1rem; border-radius: var(--raio); }
+  .atalho::before { width: 3.3rem; height: 3.3rem; border-radius: 12px; font-size: 1.7rem; }
+  .atalho strong { font-size: 1.2rem; }
+  .atalho span { font-size: .98rem; }
+  .atalho:hover { transform: translateY(-3px); box-shadow: var(--sombra-forte); }
+
+  /* ---- KPIs grandes ---- */
+  .numero { padding: 1.3rem 1.5rem; }
+  .numero b { font-size: 2.7rem; }
+  .numero span { font-size: 1.02rem; }
+  .numero:hover { transform: translateY(-3px); box-shadow: var(--sombra-forte); }
+
+  /* ---- Tabelas com mais respiro e texto maior ---- */
+  th { font-size: .82rem; padding: .85rem 1.1rem; }
+  td { padding: 1rem 1.1rem; font-size: 1.02rem; }
+
+  /* ---- Etapas do formulário maiores ---- */
+  .etapa { padding: 1.3rem 1.7rem 1.6rem; }
+  .etapa legend { font-size: 1.18rem; }
+  .etapa legend .num { width: 2rem; height: 2rem; font-size: 1rem; }
+
+  /* ---- Título de página com ar ---- */
+  .cabecalho-pagina { margin-bottom: 1.4rem; }
+}
+
+/* Respeita quem prefere menos movimento */
+@media (prefers-reduced-motion: reduce) {
+  *, .conteudo > *, .alerta-faltas { animation: none !important; transition: none !important; }
 }

@@ -557,7 +557,25 @@
     } finally {
       conteudo.focus({ preventScroll: true });
       adaptarCelular();
+      animarNumeros();
     }
+  }
+
+  // Anima os números grandes (KPIs) contando de 0 até o valor, para dar vida
+  function animarNumeros() {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    $$('.numero b', conteudo).forEach((el) => {
+      const alvo = parseInt(el.textContent.replace(/\D/g, ''), 10);
+      if (!Number.isFinite(alvo) || alvo <= 0 || alvo > 100000) return;
+      const dur = 650, ini = performance.now(), fim = el.textContent;
+      const passo = (t) => {
+        const p = Math.min(1, (t - ini) / dur);
+        const e = 1 - Math.pow(1 - p, 3); // desacelera no fim
+        el.textContent = Math.round(alvo * e);
+        if (p < 1) requestAnimationFrame(passo); else el.textContent = fim;
+      };
+      requestAnimationFrame(passo);
+    });
   }
 
   // Ajustes do visual de aplicativo, refeitos a cada tela (inofensivos no computador)
