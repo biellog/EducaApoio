@@ -26,6 +26,36 @@
     window.scrollTo({ top: 0 });
   }
 
+  /* ========= Tema: claro, escuro ou do sistema ========= */
+  // Guardamos a PREFERÊNCIA ('claro'|'escuro'|'sistema'); o atributo
+  // data-tema no <html> recebe o tema EFETIVO ('claro'|'escuro') para o CSS.
+  const consultaEscuro = window.matchMedia('(prefers-color-scheme: dark)');
+  function temaPreferido() {
+    try { return localStorage.getItem('educaapoio-tema') || 'sistema'; } catch (e) { return 'sistema'; }
+  }
+  function temaEfetivo(pref) {
+    if (pref === 'claro' || pref === 'escuro') return pref;
+    return consultaEscuro.matches ? 'escuro' : 'claro';
+  }
+  function marcarSeletorTema(pref) {
+    document.querySelectorAll('#seletor-tema [data-tema-op]').forEach((b) => {
+      const sel = b.getAttribute('data-tema-op') === pref;
+      b.classList.toggle('ativo', sel);
+      b.setAttribute('aria-pressed', sel ? 'true' : 'false');
+    });
+  }
+  function aplicarTema(pref) {
+    document.documentElement.setAttribute('data-tema', temaEfetivo(pref));
+    try { localStorage.setItem('educaapoio-tema', pref); } catch (e) { /* sem armazenamento */ }
+    marcarSeletorTema(pref);
+  }
+  // Aplica cedo para não "piscar" no tema errado
+  aplicarTema(temaPreferido());
+  // Se estiver em "sistema", acompanha a troca de aparência do aparelho em tempo real
+  const aoTrocarSistema = () => { if (temaPreferido() === 'sistema') aplicarTema('sistema'); };
+  if (consultaEscuro.addEventListener) consultaEscuro.addEventListener('change', aoTrocarSistema);
+  else if (consultaEscuro.addListener) consultaEscuro.addListener(aoTrocarSistema);
+
   const $ = (sel, raiz) => (raiz || document).querySelector(sel);
   const $$ = (sel, raiz) => Array.from((raiz || document).querySelectorAll(sel));
   const conteudo = $('#conteudo');
@@ -363,6 +393,28 @@
   function iniciarApp() {
     $('#tela-login').classList.add('oculto');
     $('#tela-app').classList.remove('oculto');
+    // Seletor de aparência (claro / escuro / sistema), no rodapé da lateral
+    if (!$('#seletor-tema')) {
+      const bloco = document.createElement('div');
+      bloco.id = 'seletor-tema';
+      bloco.className = 'seletor-tema';
+      bloco.setAttribute('role', 'group');
+      bloco.setAttribute('aria-label', 'Aparência do sistema');
+      const ops = [
+        ['claro', '☀️', 'Claro'],
+        ['escuro', '🌙', 'Escuro'],
+        ['sistema', '🖥️', 'Sistema'],
+      ];
+      bloco.innerHTML = ops.map(([op, ic, rot]) =>
+        `<button type="button" data-tema-op="${op}" title="Tema ${rot.toLowerCase()}" aria-label="Tema ${rot.toLowerCase()}">` +
+        `<span class="ico" aria-hidden="true">${ic}</span><span class="rot">${rot}</span></button>`
+      ).join('');
+      bloco.addEventListener('click', (ev) => {
+        const b = ev.target.closest('[data-tema-op]');
+        if (b) aplicarTema(b.getAttribute('data-tema-op'));
+      });
+      $('#sair').insertAdjacentElement('beforebegin', bloco);
+    }
     // Botão de trocar visual (celular <-> computador), no rodapé da lateral
     if (!$('#trocar-modo')) {
       const botao = document.createElement('button');
@@ -374,6 +426,7 @@
       $('#sair').insertAdjacentElement('beforebegin', botao);
     }
     aplicarModo(document.documentElement.getAttribute('data-modo'));
+    aplicarTema(temaPreferido());
     montarMenu();
     carregarNotificacoes();
     conectarAvisos();

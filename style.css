@@ -40,16 +40,88 @@
   --foco: #e8a817;
   --foco-claro: #fcf4e0;
 
+  /* Superfícies e detalhes neutros (tokenizados p/ tema) */
+  --superficie-2: #f6f8fa;   /* fundos sutis (tabelas, caixas, chat) */
+  --placeholder: #8a8f96;    /* texto de dica nos campos */
+  --info-hover: #dce7f8;     /* hover de áreas azuladas */
+  --scroll: #c4ccd6;
+  --scroll-hover: #aab4c0;
+
+  /* Bordas que acompanham os fundos coloridos */
+  --borda-info: #cbd9f0;
+  --borda-erro: #f0c5c0;
+  --borda-aviso: #ecd9a6;
+
   --raio: 14px;
   --raio-peq: 10px;
   --sombra: 0 1px 2px rgba(16, 24, 40, .06), 0 4px 12px rgba(16, 24, 40, .07);
   --sombra-forte: 0 6px 16px rgba(16, 24, 40, .10), 0 18px 36px rgba(16, 24, 40, .12);
 
+  color-scheme: light;
   font-family: "Inter", "Segoe UI", Roboto, "Noto Sans", system-ui, Arial, sans-serif;
   color: var(--tinta);
   background: var(--papel);
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
+}
+
+/* =====================================================================
+   TEMA ESCURO  (html[data-tema="escuro"])
+   Só redefine cores — toda a estrutura e tamanhos continuam iguais.
+   Fundo grafite azulado, cartões um tom acima, texto claro, contraste
+   confortável. Barra lateral verde continua (identidade da escola),
+   só um pouco mais profunda para combinar.
+   ===================================================================== */
+html[data-tema="escuro"] {
+  color-scheme: dark;
+
+  /* Verde da lateral: mais profundo no escuro */
+  --lousa: #0f332c;
+  --lousa-escura: #08201b;
+  --lousa-2: #16463c;
+  --lousa-3: #27564a;
+  --giz: #e6efec;
+
+  /* Fundo e tinta */
+  --papel: #0f141b;
+  --papel-2: #1a212b;
+  --folha: #171e27;
+  --tinta: #e7ecf3;
+  --tinta-2: #a4afbd;
+  --linha: #2b333f;
+  --linha-forte: #3a4351;
+
+  /* Ação principal (azul mais luminoso p/ brilhar no escuro) */
+  --caneta: #5b94f0;
+  --caneta-escura: #3f78d8;
+  --caneta-clara: #1a2740;
+
+  /* Situações (tintas escuras, texto claro mantém leitura) */
+  --vermelho: #ff6f63;
+  --vermelho-claro: #3a1c1a;
+  --ambar: #e3a438;
+  --ambar-claro: #352a14;
+  --verde: #4bbd82;
+  --verde-claro: #16301f;
+
+  /* Destaque */
+  --foco: #f0bb3f;
+  --foco-claro: #352a12;
+
+  /* Superfícies e detalhes */
+  --superficie-2: #141b24;
+  --placeholder: #78828f;
+  --info-hover: #22304a;
+  --scroll: #3a4351;
+  --scroll-hover: #4c586a;
+
+  /* Bordas que acompanham os fundos coloridos */
+  --borda-info: #2c3c5a;
+  --borda-erro: #5a2a26;
+  --borda-aviso: #4d3c1c;
+
+  --sombra: 0 1px 2px rgba(0, 0, 0, .35), 0 4px 14px rgba(0, 0, 0, .40);
+  --sombra-forte: 0 8px 20px rgba(0, 0, 0, .50), 0 20px 40px rgba(0, 0, 0, .55);
 }
 
 * { box-sizing: border-box; }
@@ -85,7 +157,7 @@ select { cursor: pointer; }
 select:disabled, input:disabled { background: var(--papel-2); color: var(--tinta-2); cursor: not-allowed; }
 input[type="checkbox"] { width: 22px; height: 22px; min-height: 0; accent-color: var(--caneta); cursor: pointer; }
 input[type="date"] { cursor: pointer; }
-::placeholder { color: #8a8f96; }
+::placeholder { color: var(--placeholder); }
 .obrig::after, .obrig-ex { content: " *"; color: var(--vermelho); font-weight: 800; }
 .obrig-ex::after { content: ""; }
 
@@ -272,7 +344,7 @@ label.btn { margin: .2rem 0 0; }
 .tabela-wrap { overflow-x: auto; background: var(--folha); border: 1px solid var(--linha); border-radius: var(--raio); box-shadow: var(--sombra); }
 table { width: 100%; border-collapse: collapse; font-size: 1rem; }
 th, td { text-align: left; padding: .85rem 1rem; border-bottom: 1px solid var(--linha); vertical-align: top; }
-th { font-size: .86rem; color: var(--tinta-2); font-weight: 800; background: #f6f8fa; text-transform: none; }
+th { font-size: .86rem; color: var(--tinta-2); font-weight: 800; background: var(--superficie-2); text-transform: none; }
 tbody tr:last-child td { border-bottom: 0; }
 tbody tr.clicavel { cursor: pointer; transition: background .12s; }
 tbody tr.clicavel:hover { background: var(--caneta-clara); }
@@ -312,7 +384,7 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .envolvidos { display: flex; flex-direction: column; gap: .3rem; margin-bottom: .9rem; }
 .envolvido {
   display: grid; grid-template-columns: minmax(140px, 1fr) minmax(200px, 2fr) auto; gap: 0 1rem; align-items: end;
-  padding: .2rem .9rem .9rem; border-radius: var(--raio); background: #f6f8fa; border: 1px solid var(--linha);
+  padding: .2rem .9rem .9rem; border-radius: var(--raio); background: var(--superficie-2); border: 1px solid var(--linha);
 }
 .envolvido .remover-envolvido { margin-bottom: 5px; }
 
@@ -321,12 +393,12 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .detalhe.sem-chat { grid-template-columns: minmax(0, 1fr); max-width: 880px; }
 .dados dl {
   display: grid; grid-template-columns: max-content 1fr; gap: .55rem 1.2rem; margin: 0;
-  background: #f6f8fa; border: 1px solid var(--linha); border-radius: var(--raio); padding: 1rem 1.2rem;
+  background: var(--superficie-2); border: 1px solid var(--linha); border-radius: var(--raio); padding: 1rem 1.2rem;
 }
 .dados dt { color: var(--tinta-2); font-weight: 600; }
 .dados dd { margin: 0; font-weight: 800; }
 .texto-livre {
-  white-space: pre-wrap; background: #f6f8fa; border: 1px solid var(--linha); border-left: 5px solid var(--linha-forte);
+  white-space: pre-wrap; background: var(--superficie-2); border: 1px solid var(--linha); border-left: 5px solid var(--linha-forte);
   padding: .85rem 1.05rem; margin: .3rem 0 1.1rem; border-radius: var(--raio-peq);
 }
 .linha-tempo { list-style: none; padding: 0; margin: 0; }
@@ -337,17 +409,17 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 }
 .linha-tempo li:last-child { border-left-color: transparent; }
 
-.grupo-box { margin: 1.1rem 0 .4rem; padding: .9rem 1.1rem; background: var(--caneta-clara); border: 1px solid #cbd9f0; border-left: 5px solid var(--caneta); border-radius: var(--raio-peq); }
+.grupo-box { margin: 1.1rem 0 .4rem; padding: .9rem 1.1rem; background: var(--caneta-clara); border: 1px solid var(--borda-info); border-left: 5px solid var(--caneta); border-radius: var(--raio-peq); }
 .grupo-box ul { margin: .45rem 0 0; padding-left: 1.2rem; }
 .grupo-box li { margin: .3rem 0; }
 
-.edicao { border: 2px solid var(--caneta); border-radius: 16px; padding: 1.3rem 1.4rem; margin: -.4rem -.5rem 0; background: #fbfcff; }
+.edicao { border: 2px solid var(--caneta); border-radius: 16px; padding: 1.3rem 1.4rem; margin: -.4rem -.5rem 0; background: var(--superficie-2); }
 #b-editar { margin-top: .3rem; }
 
 .chat { display: flex; flex-direction: column; height: 580px; position: sticky; top: 5.2rem; margin-bottom: 0; }
-.chat-msgs { flex: 1; overflow-y: auto; padding: .4rem; display: flex; flex-direction: column; gap: .65rem; background: #f6f8fa; border-radius: var(--raio); border: 1px solid var(--linha); }
+.chat-msgs { flex: 1; overflow-y: auto; padding: .4rem; display: flex; flex-direction: column; gap: .65rem; background: var(--superficie-2); border-radius: var(--raio); border: 1px solid var(--linha); }
 .msg { max-width: 88%; padding: .65rem .9rem; border-radius: 14px 14px 14px 4px; background: var(--folha); border: 1px solid var(--linha); box-shadow: 0 1px 2px rgba(0, 0, 0, .04); }
-.msg.minha { align-self: flex-end; background: var(--caneta-clara); border-color: #cbd9f0; border-radius: 14px 14px 4px 14px; }
+.msg.minha { align-self: flex-end; background: var(--caneta-clara); border-color: var(--borda-info); border-radius: 14px 14px 4px 14px; }
 .msg .quem { font-size: .82rem; color: var(--tinta-2); font-weight: 800; margin-bottom: .1rem; }
 .msg .txt { white-space: pre-wrap; word-wrap: break-word; }
 .msgs-vazio, .chat-msgs .vazio { text-align: center; margin: auto; }
@@ -389,7 +461,7 @@ a.numero:hover { transform: translateY(-2px); box-shadow: var(--sombra-forte); }
 .atencao { color: var(--vermelho); font-weight: 800; }
 
 .alerta-faltas {
-  background: var(--vermelho-claro); border: 1px solid #f0c5c0; border-left: 8px solid var(--vermelho);
+  background: var(--vermelho-claro); border: 1px solid var(--borda-erro); border-left: 8px solid var(--vermelho);
   border-radius: 16px; padding: 1.1rem 1.4rem; margin: 0 0 1.5rem; box-shadow: var(--sombra);
 }
 .alerta-faltas h2 { color: var(--vermelho); margin: 0 0 .55rem; font-size: 1.18rem; }
@@ -401,14 +473,14 @@ a.numero:hover { transform: translateY(-2px); box-shadow: var(--sombra-forte); }
 /* ---------- Funções, categorias e turmas ---------- */
 .permissoes { list-style: none; padding: 0; margin: .4rem 0 0; }
 .permissoes li { display: flex; gap: .75rem; align-items: flex-start; padding: .7rem .2rem; border-bottom: 1px solid var(--linha); }
-.permissoes li:hover { background: #f6f8fa; }
+.permissoes li:hover { background: var(--superficie-2); }
 .permissoes input { margin-top: .2rem; flex: none; }
 .permissoes label { margin: 0; cursor: pointer; }
 .permissoes .muted { display: block; font-weight: 400; }
 .categorias-check { display: flex; gap: .6rem 1.4rem; flex-wrap: wrap; margin-top: .4rem; }
 .categorias-check label {
   display: flex; gap: .55rem; align-items: center; margin: 0; font-weight: 700; cursor: pointer; min-height: 44px;
-  padding: .3rem .8rem; border-radius: 999px; background: #f6f8fa; border: 1px solid var(--linha);
+  padding: .3rem .8rem; border-radius: 999px; background: var(--superficie-2); border: 1px solid var(--linha);
 }
 .categorias-check label:has(input:checked) { background: var(--caneta-clara); border-color: var(--caneta); }
 .resumo-perm { font-size: .92rem; color: var(--tinta-2); }
@@ -505,11 +577,11 @@ select.u-funcao { min-width: 230px; }
   min-height: 56px; padding: .6rem 1rem; border: 2px dashed var(--caneta); border-radius: var(--raio);
   background: var(--caneta-clara); color: var(--caneta); font: inherit; font-weight: 800; font-size: 1.05rem; cursor: pointer;
 }
-.btn-adicionar:hover { background: #dce7f8; }
+.btn-adicionar:hover { background: var(--info-hover); }
 .btn-adicionar:disabled { opacity: .55; cursor: not-allowed; }
 .btn-adicionar .mais { display: inline-grid; place-items: center; width: 1.8rem; height: 1.8rem; border-radius: 50%; background: var(--caneta); color: #fff; font-size: 1.3rem; line-height: 1; }
 .btn-adicionar .dica-tecla { font-weight: 600; font-size: .88rem; color: var(--tinta-2); }
-.colar-lista { margin-top: .8rem; border: 1px solid var(--linha); border-radius: var(--raio); padding: .6rem 1rem; background: #f6f8fa; }
+.colar-lista { margin-top: .8rem; border: 1px solid var(--linha); border-radius: var(--raio); padding: .6rem 1rem; background: var(--superficie-2); }
 .colar-lista summary { cursor: pointer; font-weight: 800; color: var(--caneta); min-height: 34px; display: flex; align-items: center; }
 .colar-lista[open] { padding-bottom: 1rem; }
 @media (max-width: 900px) {
@@ -522,7 +594,7 @@ select.u-funcao { min-width: 230px; }
 @media (max-width: 900px) { .envolvido:not(.varios) { grid-template-columns: 1fr; } }
 
 /* Dicas de segurança em Minha conta */
-.dicas-seguranca { background: var(--foco-claro); border: 1px solid #ecd9a6; border-radius: var(--raio); padding: .8rem 1.2rem; margin-top: 1rem; }
+.dicas-seguranca { background: var(--foco-claro); border: 1px solid var(--borda-aviso); border-radius: var(--raio); padding: .8rem 1.2rem; margin-top: 1rem; }
 .dicas-seguranca h2 { font-size: 1.1rem; margin-top: 0; }
 .dicas-seguranca ul { margin: 0; padding-left: 1.2rem; }
 .dicas-seguranca li { margin: .45rem 0; }
@@ -766,7 +838,7 @@ label { font-weight: 600; }
 
   /* ---- Tabelas: cabeçalho discreto, linhas arejadas ---- */
   .tabela-wrap { border: 1px solid var(--linha); border-radius: var(--raio); }
-  th { font-size: .74rem; text-transform: uppercase; letter-spacing: .04em; color: var(--tinta-2); background: #fafbfc; font-weight: 600; padding: .7rem 1rem; }
+  th { font-size: .74rem; text-transform: uppercase; letter-spacing: .04em; color: var(--tinta-2); background: var(--superficie-2); font-weight: 600; padding: .7rem 1rem; }
   td { padding: .8rem 1rem; }
   tbody tr:nth-child(even) { background: transparent; }
   tbody tr.clicavel:hover { background: var(--caneta-clara); }
@@ -798,10 +870,10 @@ label { font-weight: 600; }
 .chip.ativo { background: var(--caneta); border-color: var(--caneta); color: #fff; }
 
 /* ---- Barra de rolagem discreta ---- */
-* { scrollbar-width: thin; scrollbar-color: #c4ccd6 transparent; }
+* { scrollbar-width: thin; scrollbar-color: var(--scroll) transparent; }
 ::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-thumb { background: #c4ccd6; border-radius: 999px; border: 2px solid transparent; background-clip: content-box; }
-::-webkit-scrollbar-thumb:hover { background: #aab4c0; background-clip: content-box; }
+::-webkit-scrollbar-thumb { background: var(--scroll); border-radius: 999px; border: 2px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover { background: var(--scroll-hover); background-clip: content-box; }
 .lateral::-webkit-scrollbar-thumb { background: rgba(255,255,255,.22); background-clip: content-box; }
 
 /* ---- Tela de entrada mais caprichada ---- */
@@ -919,4 +991,40 @@ label { font-size: 1.05rem; font-weight: 700; margin-top: 1.1rem; }
 /* Respeita quem prefere menos movimento */
 @media (prefers-reduced-motion: reduce) {
   *, .conteudo > *, .alerta-faltas { animation: none !important; transition: none !important; }
+}
+
+/* =====================================================================
+   SELETOR DE APARÊNCIA (claro / escuro / sistema)
+   Fica no rodapé da barra lateral verde. Três segmentos iguais.
+   ===================================================================== */
+.seletor-tema {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: .3rem;
+  margin-top: .9rem; padding: .3rem; border-radius: var(--raio-peq);
+  background: rgba(0, 0, 0, .18); border: 1px solid rgba(255, 255, 255, .14);
+}
+.seletor-tema button {
+  display: flex; flex-direction: column; align-items: center; gap: .15rem;
+  padding: .5rem .2rem; min-height: 54px; cursor: pointer;
+  background: transparent; border: 0; border-radius: 8px;
+  color: #e6efec; font: inherit; font-weight: 700; font-size: .72rem;
+  transition: background .15s, color .15s, transform .12s;
+}
+.seletor-tema button .ico { font-size: 1.25rem; line-height: 1; }
+.seletor-tema button:hover { background: rgba(255, 255, 255, .1); }
+.seletor-tema button:active { transform: scale(.96); }
+.seletor-tema button.ativo {
+  background: #fff; color: var(--lousa);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .22);
+}
+.seletor-tema button.ativo .ico { transform: scale(1.06); }
+.seletor-tema button:focus-visible { outline: 3px solid var(--foco); outline-offset: 2px; }
+
+/* No tema escuro o segmento ativo fica num branco suave para não ofuscar */
+html[data-tema="escuro"] .seletor-tema button.ativo { background: #e6efec; color: #0d2e28; }
+
+/* Em telas pequenas / modo app a lateral vira gaveta: mantém legível */
+@media (max-width: 920px) {
+  .seletor-tema { margin-top: .8rem; }
+  .seletor-tema button { min-height: 60px; font-size: .8rem; }
+  .seletor-tema button .ico { font-size: 1.4rem; }
 }
