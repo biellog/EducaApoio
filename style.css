@@ -1018,3 +1018,47 @@ html[data-tema="escuro"] .seletor-tema button.ativo { background: #e6efec; color
   .seletor-tema button { min-height: 60px; font-size: .8rem; }
   .seletor-tema button .ico { font-size: 1.4rem; }
 }
+
+/* =====================================================================
+   AJUSTE FINO DO FORMULÁRIO DE REGISTRO/EDIÇÃO (só acabamento)
+   Cabeçalho de cada etapa com um filete discreto, numeração limpa e
+   espaçamento interno consistente. Não muda campos nem comportamento.
+   ===================================================================== */
+
+/* Cada etapa um pouco mais separada da seguinte */
+.etapa { margin-bottom: 1.3rem; }
+
+/* Cabeçalho da etapa: título em largura total, com filete embaixo */
+.etapa > legend {
+  display: flex; align-items: center; gap: .6rem; width: 100%; box-sizing: border-box;
+  padding: 0 0 .7rem; margin-bottom: .9rem;
+  background: none; border-radius: 0; border-bottom: 1px solid var(--linha);
+  font-size: 1.12rem; font-weight: 700; letter-spacing: -.01em;
+}
+.etapa > legend .muted { margin-left: auto; font-weight: 500; }
+
+/* Número do passo: círculo limpo, sem anel colorido */
+.etapa legend .num {
+  width: 1.9rem; height: 1.9rem; font-size: .95rem; font-weight: 700;
+  box-shadow: none; flex: none;
+}
+.etapa-perigo > legend { border-bottom-color: var(--borda-erro); }
+
+/* Primeiro campo logo abaixo do cabeçalho não fica nem colado nem afastado */
+.etapa > label:first-of-type,
+.etapa > .grade-2:first-of-type,
+.etapa > div:first-of-type > label { margin-top: 0; }
+
+/* Linhas de estudante: um respiro a mais e alinhamento confortável */
+.envolvido { padding: .55rem .9rem .85rem; }
+
+/* Asterisco de obrigatório: nítido, porém discreto */
+.obrig::after, .obrig-ex { font-weight: 700; font-size: .92em; }
+
+/* Ações finais com uma linha-guia acima, separando do último campo */
+.acoes-grandes { border-top: 1px solid var(--linha); padding-top: 1.3rem; }
+
+@media (min-width: 921px) {
+  /* Botões de ação final em tamanho justo (não ocupam a largura toda) */
+  .acoes-grandes .btn { min-width: 190px; }
+}
