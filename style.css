@@ -52,10 +52,10 @@
   --borda-erro: #f0c5c0;
   --borda-aviso: #ecd9a6;
 
-  --raio: 14px;
-  --raio-peq: 10px;
-  --sombra: 0 1px 2px rgba(16, 24, 40, .06), 0 4px 12px rgba(16, 24, 40, .07);
-  --sombra-forte: 0 6px 16px rgba(16, 24, 40, .10), 0 18px 36px rgba(16, 24, 40, .12);
+  --raio: 12px;
+  --raio-peq: 9px;
+  --sombra: 0 1px 2px rgba(16, 24, 40, .05), 0 2px 8px rgba(16, 24, 40, .05);
+  --sombra-forte: 0 4px 12px rgba(16, 24, 40, .08), 0 12px 28px rgba(16, 24, 40, .10);
 
   color-scheme: light;
   font-family: "Inter", "Segoe UI", Roboto, "Noto Sans", system-ui, Arial, sans-serif;
@@ -821,7 +821,7 @@ label { font-weight: 600; }
   }
   .atalho strong { grid-column: 2; font-size: 1.02rem; font-weight: 600; }
   .atalho span { grid-column: 2; font-size: .86rem; line-height: 1.35; }
-  .atalho:hover { transform: translateY(-1px); border-color: var(--linha-forte); box-shadow: var(--sombra-forte); }
+  .atalho:hover { border-color: var(--linha-forte); box-shadow: var(--sombra); }
   .atalho.destaque:hover { border-color: var(--caneta-escura); }
 
   /* ---- Números/KPIs mais sóbrios ---- */
@@ -915,37 +915,27 @@ label { font-weight: 600; }
    (pedido do usuário: profissional, maior, fácil de enxergar, com vida)
    ===================================================================== */
 
-/* ---- Controles maiores e com toque confortável ---- */
-.btn { min-height: 54px; padding: .65rem 1.5rem; font-size: 1.02rem; font-weight: 700; border-radius: var(--raio-peq);
-  transition: background .15s, border-color .15s, transform .12s, box-shadow .15s; }
-.btn:hover { transform: translateY(-1px); box-shadow: var(--sombra); }
-.btn:active { transform: translateY(0); box-shadow: none; }
-.btn.grande { min-height: 62px; font-size: 1.12rem; }
-.btn.peq { min-height: 44px; font-size: .96rem; padding: .4rem 1rem; }
-input, select, textarea { min-height: 56px; font-size: 1.05rem; padding: .7rem .9rem; border-radius: var(--raio-peq); }
-textarea { min-height: 9rem; }
-label { font-size: 1.05rem; font-weight: 700; margin-top: 1.1rem; }
+/* ---- Controles de bom tamanho (legíveis), porém sóbrios ---- */
+.btn { min-height: 50px; padding: .6rem 1.35rem; font-size: 1rem; font-weight: 600; border-radius: var(--raio-peq);
+  transition: background .14s, border-color .14s; box-shadow: none; }
+.btn:hover { box-shadow: none; }
+.btn:active { transform: none; }
+.btn.grande { min-height: 56px; font-size: 1.06rem; }
+.btn.peq { min-height: 42px; font-size: .94rem; padding: .4rem 1rem; }
+input, select, textarea { min-height: 52px; font-size: 1.02rem; padding: .65rem .85rem; border-radius: var(--raio-peq); }
+textarea { min-height: 8.5rem; }
+label { font-size: 1rem; font-weight: 600; margin-top: 1.05rem; }
 
-/* ---- Atalhos de filtro (chips) maiores ---- */
-.chip { min-height: 44px; font-size: .98rem; padding: .4rem 1.15rem; transition: background .15s, border-color .15s, color .15s, transform .12s; }
-.chip:hover { transform: translateY(-1px); }
+/* ---- Atalhos de filtro (chips) ---- */
+.chip { min-height: 42px; font-size: .95rem; padding: .4rem 1.1rem; transition: background .14s, border-color .14s, color .14s; }
 
-/* ---- Etiquetas de situação maiores ---- */
-.carimbo { font-size: .86rem; padding: .22rem .75rem; }
-.carimbo.grande { font-size: 1.02rem; padding: .34rem 1rem; }
+/* ---- Etiquetas de situação ---- */
+.carimbo { font-size: .82rem; padding: .2rem .7rem; }
+.carimbo.grande { font-size: .96rem; padding: .3rem .9rem; }
 
-/* ---- Animação de entrada das telas (leve, uma vez por tela) ---- */
-@keyframes surgir { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
-.conteudo > * { animation: surgir .42s cubic-bezier(.2,.7,.3,1) both; }
-.conteudo > *:nth-child(1) { animation-delay: .02s; }
-.conteudo > *:nth-child(2) { animation-delay: .08s; }
-.conteudo > *:nth-child(3) { animation-delay: .14s; }
-.conteudo > *:nth-child(4) { animation-delay: .20s; }
-.conteudo > *:nth-child(5) { animation-delay: .26s; }
-
-/* ---- Alerta de faltas: pulso suave para chamar atenção ---- */
-@keyframes pulso-alerta { 0%,100% { box-shadow: var(--sombra); } 50% { box-shadow: 0 0 0 4px rgba(194,42,33,.14), var(--sombra-forte); } }
-.alerta-faltas { animation: surgir .42s both, pulso-alerta 2.6s ease-in-out .5s 3; }
+/* ---- Entrada da tela: um aparecer discreto, uma vez, sem exageros ---- */
+@keyframes surgir { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+.conteudo { animation: surgir .26s ease-out both; }
 
 /* ---- Números do painel: transição suave quando a contagem anima (JS) ---- */
 .numero b { transition: color .2s; }
@@ -961,31 +951,31 @@ label { font-size: 1.05rem; font-weight: 700; margin-top: 1.1rem; }
   .lateral nav a { font-size: 1.04rem; padding: .7rem .85rem; }
   .rodape-lateral strong { font-size: 1.05rem; }
 
-  /* ---- Atalhos do Início: grandes, com ícone destacado ---- */
-  .atalhos { grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 1.1rem; }
-  .atalho { padding: 1.4rem 1.5rem; column-gap: 1.1rem; border-radius: var(--raio); }
-  .atalho::before { width: 3.3rem; height: 3.3rem; border-radius: 12px; font-size: 1.7rem; }
-  .atalho strong { font-size: 1.2rem; }
-  .atalho span { font-size: .98rem; }
-  .atalho:hover { transform: translateY(-3px); box-shadow: var(--sombra-forte); }
+  /* ---- Atalhos do Início: claros, com ícone à esquerda ---- */
+  .atalhos { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; }
+  .atalho { padding: 1.2rem 1.3rem; column-gap: 1rem; border-radius: var(--raio); transition: border-color .14s, box-shadow .14s; }
+  .atalho::before { width: 2.9rem; height: 2.9rem; border-radius: 10px; font-size: 1.5rem; }
+  .atalho strong { font-size: 1.08rem; }
+  .atalho span { font-size: .92rem; }
+  .atalho:hover { border-color: var(--linha-forte); box-shadow: var(--sombra); }
 
-  /* ---- KPIs grandes ---- */
-  .numero { padding: 1.3rem 1.5rem; }
-  .numero b { font-size: 2.7rem; }
-  .numero span { font-size: 1.02rem; }
-  .numero:hover { transform: translateY(-3px); box-shadow: var(--sombra-forte); }
+  /* ---- KPIs: número em destaque, sem exagero ---- */
+  .numero { padding: 1.15rem 1.35rem; transition: border-color .14s; }
+  .numero b { font-size: 2.1rem; }
+  .numero span { font-size: .98rem; }
+  .numero:hover { border-color: var(--linha-forte); }
 
-  /* ---- Tabelas com mais respiro e texto maior ---- */
-  th { font-size: .82rem; padding: .85rem 1.1rem; }
-  td { padding: 1rem 1.1rem; font-size: 1.02rem; }
+  /* ---- Tabelas com respiro e texto confortável ---- */
+  th { font-size: .78rem; padding: .8rem 1.05rem; }
+  td { padding: .9rem 1.05rem; font-size: 1rem; }
 
-  /* ---- Etapas do formulário maiores ---- */
-  .etapa { padding: 1.3rem 1.7rem 1.6rem; }
-  .etapa legend { font-size: 1.18rem; }
-  .etapa legend .num { width: 2rem; height: 2rem; font-size: 1rem; }
+  /* ---- Etapas do formulário ---- */
+  .etapa { padding: 1.2rem 1.5rem 1.4rem; }
+  .etapa legend { font-size: 1.1rem; }
+  .etapa legend .num { width: 1.9rem; height: 1.9rem; font-size: .95rem; }
 
   /* ---- Título de página com ar ---- */
-  .cabecalho-pagina { margin-bottom: 1.4rem; }
+  .cabecalho-pagina { margin-bottom: 1.3rem; }
 }
 
 /* Respeita quem prefere menos movimento */
