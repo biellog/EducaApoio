@@ -60,6 +60,24 @@
   const $$ = (sel, raiz) => Array.from((raiz || document).querySelectorAll(sel));
   const conteudo = $('#conteudo');
 
+  // Nomes de pessoas são convertidos no próprio campo, sem depender do Caps Lock.
+  function normalizarNome(valor) {
+    return String(valor == null ? '' : valor).trim().replace(/\s+/g, ' ').toLocaleUpperCase('pt-BR');
+  }
+  document.addEventListener('input', (e) => {
+    const campo = e.target;
+    if (!campo.matches || !campo.matches('.campo-nome')) return;
+    const inicio = campo.selectionStart;
+    const fim = campo.selectionEnd;
+    const convertido = campo.value.toLocaleUpperCase('pt-BR');
+    if (campo.value !== convertido) {
+      campo.value = convertido;
+      if (inicio != null && fim != null) {
+        try { campo.setSelectionRange(inicio, fim); } catch (err) { /* campo sem seleção de texto */ }
+      }
+    }
+  });
+
   const STATUS = { ABERTA: 'Aberta', EM_ACOMPANHAMENTO: 'Em acompanhamento', ENCERRADA: 'Encerrada' };
   // Categorias: carregadas do banco ao entrar (estas são só o padrão inicial)
   let CATEGORIA = { ADMINISTRATIVA: 'Administrativa', PEDAGOGICA: 'Pedagógica', CONVIVA: 'Conviva (média gravidade)' };
@@ -837,7 +855,7 @@
     conteudo.innerHTML = `
       <a class="voltar" href="#/inicio">&larr; Voltar</a>
       <div class="cabecalho-pagina"><div><h1>Registrar ocorrência</h1>
-      <p class="muted">Preencha as 4 partes. Os campos com <span class="obrig-ex">*</span> são obrigatórios.</p></div></div>
+      <p class="muted">Preencha as 4 partes. Os campos com <span class="obrig-ex">*</span> são obrigatórios. Os nomes dos estudantes são registrados automaticamente em letras maiúsculas.</p></div></div>
       ${await sugestoes()}
       <form id="f-nova">
         <fieldset class="etapa">
@@ -893,7 +911,7 @@
       <div class="envolvido">
         <span class="num-envolvido" aria-hidden="true"></span>
         <div><label class="obrig">Turma</label><select required ${turmas.length ? '' : 'disabled'}>${opcoesTurma(turmas, turma || '')}</select></div>
-        <div><label class="obrig">Estudante</label><input list="${datalistAlunos}" maxlength="150" placeholder="Nome completo" required value="${esc(nome || '')}"></div>
+        <div><label class="obrig">Estudante</label><input class="campo-nome" list="${datalistAlunos}" maxlength="150" placeholder="Nome completo" required value="${esc(normalizarNome(nome || ''))}" autocomplete="off"></div>
         <button class="remover-envolvido" type="button" title="Remover este estudante" aria-label="Remover este estudante">&times;</button>
       </div>`;
     const renumerar = () => {
@@ -986,7 +1004,7 @@
         const d = lerForm(e.target);
         const arquivos = Array.from($('#n-anexos').files);
         const envolvidos = $$('#envolvidos .envolvido').map((l) => ({
-          turma: $('select', l).value, aluno: $('input', l).value.trim().replace(/\s+/g, ' '),
+          turma: $('select', l).value, aluno: normalizarNome($('input', l).value),
         }));
         if (envolvidos.some((x) => !x.turma || !x.aluno)) throw new Error('Preencha a turma e o nome de cada estudante, ou remova a linha vazia.');
         const repetido = envolvidos.find((x, i) => envolvidos.findIndex((y) => y.aluno.toLowerCase() === x.aluno.toLowerCase() && y.turma === x.turma) !== i);
@@ -1215,7 +1233,7 @@
             <div class="grade-3">
               <div><label class="obrig" for="ed-data">Data do fato</label><input id="ed-data" type="date" name="data_fato" max="${hoje()}" value="${esc(o.data_fato)}" required></div>
               <div><label class="obrig" for="ed-turma">Turma</label><select id="ed-turma" name="turma" required>${opcoesTurma(turmas, o.turma)}</select></div>
-              <div><label class="obrig" for="ed-aluno">Estudante</label><input id="ed-aluno" name="aluno" list="dl-alunos" maxlength="150" value="${esc(o.aluno)}" required></div>
+              <div><label class="obrig" for="ed-aluno">Estudante</label><input id="ed-aluno" class="campo-nome" name="aluno" list="dl-alunos" maxlength="150" value="${esc(normalizarNome(o.aluno))}" required></div>
             </div>
             <div class="grade-2">
               <div><label class="obrig" for="ed-cat">Categoria</label><select id="ed-cat" required>${cats.map((c) => `<option value="${esc(c)}" ${c === o.categoria ? 'selected' : ''}>${esc(nomeCategoria(c))}</option>`).join('')}</select></div>
@@ -1257,7 +1275,7 @@
             bs.textContent = 'Salvando…';
             try {
               ok(await sb.rpc('editar_ocorrencia', {
-                p_id: id, p_data_fato: d.data_fato, p_turma: d.turma, p_aluno: d.aluno, p_tipo_id: Number(d.tipo_id),
+                p_id: id, p_data_fato: d.data_fato, p_turma: d.turma, p_aluno: normalizarNome(d.aluno), p_tipo_id: Number(d.tipo_id),
                 p_descricao: d.descricao, p_providencias: d.providencias, p_motivo: d.motivo || null,
               }));
               toast('Ocorrência corrigida.');
@@ -1511,11 +1529,11 @@
     };
 
     conteudo.innerHTML = `
-      <div class="cabecalho-pagina"><div><h1>Usuários</h1><p class="muted">Cada pessoa entra com o próprio e-mail e vê o que a função dela permite. As funções são definidas em <a href="#/funcoes">Funções de acesso</a>.</p></div></div>
+      <div class="cabecalho-pagina"><div><h1>Usuários</h1><p class="muted">Cada pessoa entra com o próprio e-mail e vê o que a função dela permite. Os nomes são registrados automaticamente em letras maiúsculas. As funções são definidas em <a href="#/funcoes">Funções de acesso</a>.</p></div></div>
       <form class="folha" id="f-user">
         <h3>Cadastrar pessoa</h3>
         <div class="grade-3">
-          <div><label class="obrig" for="u-nome">Nome</label><input id="u-nome" name="nome" maxlength="120" required></div>
+          <div><label class="obrig" for="u-nome">Nome</label><input id="u-nome" class="campo-nome" name="nome" maxlength="120" required autocomplete="name"></div>
           <div><label class="obrig" for="u-email">E-mail</label><input id="u-email" name="email" type="email" required></div>
           <div><label class="obrig" for="u-funcao">Função</label><select id="u-funcao" name="funcao" required>${opcoesFuncao(null, 'Selecione')}</select></div>
         </div>
@@ -1547,11 +1565,11 @@
         const tmp = window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseAnonKey, {
           auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, storageKey: 'educaapoio-cadastro' },
         });
-        const r = ok(await tmp.auth.signUp({ email: d.email.trim(), password: senhaDescartavel(), options: { data: { nome: d.nome.trim() } } }));
+        const r = ok(await tmp.auth.signUp({ email: d.email.trim(), password: senhaDescartavel(), options: { data: { nome: normalizarNome(d.nome) } } }));
         if (!r.user || (r.user.identities && r.user.identities.length === 0)) throw new Error('Esse e-mail já está cadastrado.');
         ok(await sb.rpc('definir_funcao', { p_usuario: r.user.id, p_funcao: Number(d.funcao) }));
         await telaUsuarios();
-        $('#u-senha').innerHTML = `<div class="aviso-ok"><strong>${esc(d.nome)}</strong> já pode entrar. No site, basta digitar <strong>${esc(d.email.trim())}</strong> e usar o código que chegar nesse e-mail.</div>`;
+        $('#u-senha').innerHTML = `<div class="aviso-ok"><strong>${esc(normalizarNome(d.nome))}</strong> já pode entrar. No site, basta digitar <strong>${esc(d.email.trim())}</strong> e usar o código que chegar nesse e-mail.</div>`;
       } catch (err) {
         $('#u-erro').textContent = erroPT(err);
         botao.disabled = false;
@@ -2089,7 +2107,7 @@
               <div><label class="obrig" for="ct-forma">Como foi o contato</label><select id="ct-forma" required>${opcoes(FORMA_CONTATO, 'TELEFONE')}</select></div>
             </div>
             <label for="ct-resp">Com quem falou (ou tentou falar)</label>
-            <input id="ct-resp" maxlength="150" placeholder="Ex.: mãe, Maria">
+            <input id="ct-resp" class="campo-nome" maxlength="150" placeholder="Ex.: MÃE, MARIA">
             <label class="obrig" for="ct-res">Resultado</label>
             <select id="ct-res" required>${opcoes(RESULTADO_CONTATO, 'SEM_SUCESSO')}</select>
             <label for="ct-obs">O que foi conversado ou combinado</label>
@@ -2127,7 +2145,7 @@
       try {
         ok(await sb.from('busca_ativa_contatos').insert({
           caso_id: id, data_contato: $('#ct-data').value, forma: $('#ct-forma').value,
-          responsavel: $('#ct-resp').value.trim(), resultado: $('#ct-res').value, observacao: $('#ct-obs').value.trim(),
+          responsavel: normalizarNome($('#ct-resp').value), resultado: $('#ct-res').value, observacao: $('#ct-obs').value.trim(),
         }));
         toast('Contato registrado.');
         telaCasoBusca(id);
@@ -2398,10 +2416,10 @@
         <form id="f-nome">
           <label for="mc-nome">Seu nome</label>
           <div class="f-tipo-cat">
-            <input id="mc-nome" name="nome" maxlength="120" required value="${esc(eu.nome)}" autocomplete="name">
+            <input id="mc-nome" class="campo-nome" name="nome" maxlength="120" required value="${esc(normalizarNome(eu.nome))}" autocomplete="name">
             <button class="btn" type="submit">Salvar nome</button>
           </div>
-          <p class="muted" style="margin-top:.5rem">É o nome que aparece nas ocorrências, nas conversas e nos PDFs.</p>
+          <p class="muted" style="margin-top:.5rem">É o nome que aparece nas ocorrências, nas conversas e nos PDFs. Ele será salvo automaticamente em letras maiúsculas.</p>
           <p class="erro" id="mc-erro" role="alert"></p>
         </form>
         <div class="dados" style="margin-top:.6rem"><dl>
@@ -2430,7 +2448,7 @@
       </section>`;
     $('#f-nome').addEventListener('submit', async (e) => {
       e.preventDefault();
-      const novo = $('#mc-nome').value.trim().replace(/\s+/g, ' ');
+      const novo = normalizarNome($('#mc-nome').value);
       $('#mc-erro').textContent = '';
       if (novo === eu.nome) { $('#mc-erro').textContent = 'Nada foi alterado.'; return; }
       const b = $('button[type=submit]', e.target);

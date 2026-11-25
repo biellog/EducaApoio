@@ -148,6 +148,8 @@ input, select, textarea {
   background: var(--folha); transition: border-color .15s, box-shadow .15s, background .15s;
 }
 textarea { min-height: 8.5rem; resize: vertical; line-height: 1.55; }
+/* A aparência acompanha o valor real convertido pelo JavaScript. */
+.campo-nome { text-transform: uppercase; }
 input:hover, select:hover, textarea:hover { border-color: var(--tinta-2); }
 input:focus, select:focus, textarea:focus {
   border-color: var(--caneta); outline: none; background: var(--foco-claro);
